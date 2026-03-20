@@ -2,6 +2,9 @@ import { withBotId } from "botid/next/config";
 import type { NextConfig } from "next";
 
 const basePath = process.env.IS_DEMO === "1" ? "/demo" : "";
+const isVercelProductionEnvironment =
+  process.env.NODE_ENV === "production" &&
+  process.env.VERCEL_ENV === "production";
 
 const nextConfig: NextConfig = {
   ...(basePath
@@ -51,4 +54,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withBotId(nextConfig);
+export default isVercelProductionEnvironment
+  ? withBotId(nextConfig)
+  : nextConfig;

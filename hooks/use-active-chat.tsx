@@ -22,7 +22,6 @@ import { getChatHistoryPaginationKey } from "@/components/chat/sidebar-history";
 import { toast } from "@/components/chat/toast";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { useAutoResume } from "@/hooks/use-auto-resume";
-import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import type { Vote } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import type { ChatMessage } from "@/lib/types";
@@ -45,8 +44,6 @@ type ActiveChatContextValue = {
   votes: Vote[] | undefined;
   currentModelId: string;
   setCurrentModelId: (id: string) => void;
-  showCreditCardAlert: boolean;
-  setShowCreditCardAlert: Dispatch<SetStateAction<boolean>>;
 };
 
 const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
@@ -73,14 +70,13 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
 
   const chatId = chatIdFromUrl ?? newChatIdRef.current;
 
-  const [currentModelId, setCurrentModelId] = useState(DEFAULT_CHAT_MODEL);
+  const [currentModelId, setCurrentModelId] = useState("");
   const currentModelIdRef = useRef(currentModelId);
   useEffect(() => {
     currentModelIdRef.current = currentModelId;
   }, [currentModelId]);
 
   const [input, setInput] = useState("");
-  const [showCreditCardAlert, setShowCreditCardAlert] = useState(false);
 
   const { data: chatData, isLoading } = useSWR(
     isNewChat
@@ -93,9 +89,21 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   const initialMessages: ChatMessage[] = isNewChat
     ? []
     : (chatData?.messages ?? []);
-  const visibility: VisibilityType = isNewChat
+  const initialVisibilityType: VisibilityType = isNewChat
     ? "private"
     : (chatData?.visibility ?? "private");
+  const { data: localVisibility, mutate: setLocalVisibility } =
+    useSWR<VisibilityType>(`${chatId}-visibility`, null, {
+      fallbackData: initialVisibilityType,
+    });
+  const visibilityType: VisibilityType =
+    chatData?.visibility ?? localVisibility ?? initialVisibilityType;
+
+  useEffect(() => {
+    if (chatData?.visibility) {
+      setLocalVisibility(chatData.visibility, { revalidate: false });
+    }
+  }, [chatData?.visibility, setLocalVisibility]);
 
   const {
     messages,
@@ -145,7 +153,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
               ? { messages: request.messages }
               : { message: lastMessage }),
             selectedChatModel: currentModelIdRef.current,
-            selectedVisibilityType: visibility,
+            selectedVisibilityType: visibilityType,
             ...request.body,
           },
         };
@@ -158,9 +166,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       mutate(unstable_serialize(getChatHistoryPaginationKey));
     },
     onError: (error) => {
-      if (error.message?.includes("AI Gateway requires a valid credit card")) {
-        setShowCreditCardAlert(true);
-      } else if (error instanceof ChatbotError) {
+      if (error instanceof ChatbotError) {
         toast({ type: "error", description: error.message });
       } else {
         toast({
@@ -198,16 +204,15 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   }, [chatId, isNewChat, setMessages]);
 
   useEffect(() => {
-    if (chatData && !isNewChat) {
-      const cookieModel = document.cookie
-        .split("; ")
-        .find((row) => row.startsWith("chat-model="))
-        ?.split("=")[1];
-      if (cookieModel) {
-        setCurrentModelId(decodeURIComponent(cookieModel));
-      }
+    const cookieModel = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("chat-model="))
+      ?.split("=")[1];
+
+    if (cookieModel) {
+      setCurrentModelId(decodeURIComponent(cookieModel));
     }
-  }, [chatData, isNewChat]);
+  }, []);
 
   const hasAppendedQueryRef = useRef(false);
   useEffect(() => {
@@ -256,14 +261,12 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       addToolApprovalResponse,
       input,
       setInput,
-      visibilityType: visibility,
+      visibilityType,
       isReadonly,
       isLoading: !isNewChat && isLoading,
       votes,
       currentModelId,
       setCurrentModelId,
-      showCreditCardAlert,
-      setShowCreditCardAlert,
     }),
     [
       chatId,
@@ -275,13 +278,12 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       regenerate,
       addToolApprovalResponse,
       input,
-      visibility,
+      visibilityType,
       isReadonly,
       isNewChat,
       isLoading,
       votes,
       currentModelId,
-      showCreditCardAlert,
     ]
   );
 

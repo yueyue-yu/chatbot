@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const MODEL_BUTTON_REGEX = /Kimi|Codestral|Mistral|DeepSeek|GPT|Grok/i;
+const DEFAULT_MODEL = process.env.OPENAI_COMPAT_DEFAULT_MODEL ?? "chat-model";
 
 test.describe("Model Selector", () => {
   test.beforeEach(async ({ page }) => {
@@ -8,74 +8,66 @@ test.describe("Model Selector", () => {
   });
 
   test("displays a model button", async ({ page }) => {
-    const modelButton = page
-      .locator("button")
-      .filter({ hasText: MODEL_BUTTON_REGEX })
-      .first();
+    const modelButton = page.getByTestId("model-selector");
     await expect(modelButton).toBeVisible();
   });
 
   test("opens model selector popover on click", async ({ page }) => {
-    const modelButton = page
-      .locator("button")
-      .filter({ hasText: MODEL_BUTTON_REGEX })
-      .first();
+    const modelButton = page.getByTestId("model-selector");
     await modelButton.click();
 
-    await expect(page.getByPlaceholder("Search models...")).toBeVisible();
+    await expect(
+      page.getByPlaceholder("Search or enter model...")
+    ).toBeVisible();
   });
 
   test("can search for models", async ({ page }) => {
-    const modelButton = page
-      .locator("button")
-      .filter({ hasText: MODEL_BUTTON_REGEX })
-      .first();
+    const modelButton = page.getByTestId("model-selector");
     await modelButton.click();
 
-    const searchInput = page.getByPlaceholder("Search models...");
-    await searchInput.fill("Mistral");
+    const searchInput = page.getByPlaceholder("Search or enter model...");
+    await searchInput.fill(DEFAULT_MODEL);
 
-    await expect(page.getByText("Mistral Small").first()).toBeVisible();
+    await expect(page.getByText(DEFAULT_MODEL).first()).toBeVisible();
   });
 
   test("can close model selector by clicking outside", async ({ page }) => {
-    const modelButton = page
-      .locator("button")
-      .filter({ hasText: MODEL_BUTTON_REGEX })
-      .first();
+    const modelButton = page.getByTestId("model-selector");
     await modelButton.click();
 
-    await expect(page.getByPlaceholder("Search models...")).toBeVisible();
+    await expect(
+      page.getByPlaceholder("Search or enter model...")
+    ).toBeVisible();
 
     await page.keyboard.press("Escape");
 
-    await expect(page.getByPlaceholder("Search models...")).not.toBeVisible();
+    await expect(
+      page.getByPlaceholder("Search or enter model...")
+    ).not.toBeVisible();
   });
 
   test("shows model provider groups", async ({ page }) => {
-    const modelButton = page
-      .locator("button")
-      .filter({ hasText: MODEL_BUTTON_REGEX })
-      .first();
+    const modelButton = page.getByTestId("model-selector");
     await modelButton.click();
 
-    await expect(page.getByText("Mistral")).toBeVisible();
-    await expect(page.getByText("Moonshot")).toBeVisible();
+    await expect(page.getByText("OpenAI Compatible")).toBeVisible();
   });
 
-  test("can select a different model", async ({ page }) => {
-    const modelButton = page
-      .locator("button")
-      .filter({ hasText: MODEL_BUTTON_REGEX })
-      .first();
+  test("can select a custom model", async ({ page }) => {
+    const modelButton = page.getByTestId("model-selector");
     await modelButton.click();
 
-    await page.getByText("Mistral Small").first().click();
+    const searchInput = page.getByPlaceholder("Search or enter model...");
+    await searchInput.fill("my-custom-model");
 
-    await expect(page.getByPlaceholder("Search models...")).not.toBeVisible();
+    await page.getByText("Use custom model: my-custom-model").click();
 
     await expect(
-      page.locator("button").filter({ hasText: "Mistral Small" }).first()
+      page.getByPlaceholder("Search or enter model...")
+    ).not.toBeVisible();
+
+    await expect(
+      page.locator("button").filter({ hasText: "my-custom-model" }).first()
     ).toBeVisible();
   });
 });

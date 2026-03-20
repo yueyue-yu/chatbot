@@ -8,6 +8,7 @@ import {
   type ChatHistory,
   getChatHistoryPaginationKey,
 } from "@/components/chat/sidebar-history";
+import { toast } from "@/components/chat/toast";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 
 export function useChatVisibility({
@@ -18,9 +19,10 @@ export function useChatVisibility({
   initialVisibilityType: VisibilityType;
 }) {
   const { mutate, cache } = useSWRConfig();
-  const history: ChatHistory = cache.get(
-    `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/history`
+  const historyPages: ChatHistory[] | undefined = cache.get(
+    unstable_serialize(getChatHistoryPaginationKey)
   )?.data;
+  const history = historyPages?.flatMap((page) => page.chats) ?? [];
 
   const { data: localVisibility, mutate: setLocalVisibility } = useSWR(
     `${chatId}-visibility`,
@@ -31,23 +33,45 @@ export function useChatVisibility({
   );
 
   const visibilityType = useMemo(() => {
-    if (!history) {
-      return localVisibility;
-    }
-    const chat = history.chats.find((currentChat) => currentChat.id === chatId);
+    const chat = history.find((currentChat) => currentChat.id === chatId);
     if (!chat) {
-      return "private";
+      return localVisibility;
     }
     return chat.visibility;
   }, [history, chatId, localVisibility]);
 
+  const setHistoryVisibility = (updatedVisibilityType: VisibilityType) => {
+    mutate(
+      unstable_serialize(getChatHistoryPaginationKey),
+      (pages: ChatHistory[] | undefined) =>
+        pages?.map((page) => ({
+          ...page,
+          chats: page.chats.map((chat) =>
+            chat.id === chatId
+              ? { ...chat, visibility: updatedVisibilityType }
+              : chat
+          ),
+        })),
+      { revalidate: false }
+    );
+  };
+
   const setVisibilityType = (updatedVisibilityType: VisibilityType) => {
-    setLocalVisibility(updatedVisibilityType);
-    mutate(unstable_serialize(getChatHistoryPaginationKey));
+    const previousVisibilityType = visibilityType ?? initialVisibilityType;
+
+    setLocalVisibility(updatedVisibilityType, { revalidate: false });
+    setHistoryVisibility(updatedVisibilityType);
 
     updateChatVisibility({
       chatId,
       visibility: updatedVisibilityType,
+    }).catch(() => {
+      setLocalVisibility(previousVisibilityType, { revalidate: false });
+      setHistoryVisibility(previousVisibilityType);
+      toast({
+        type: "error",
+        description: "Failed to update chat visibility.",
+      });
     });
   };
 
