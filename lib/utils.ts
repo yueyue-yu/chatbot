@@ -6,7 +6,7 @@ import { type ClassValue, clsx } from 'clsx';
 import { formatISO } from 'date-fns';
 import { twMerge } from 'tailwind-merge';
 import type { DBMessage, Document } from '@/lib/db/schema';
-import { ChatbotError, type ErrorCode } from './errors';
+import { ChatbotError, type ErrorCode, type Surface } from './errors';
 import type { ChatMessage, ChatTools, CustomUIDataTypes } from './types';
 
 export function cn(...inputs: ClassValue[]) {
@@ -75,6 +75,7 @@ export const fetcher = async (url: string) => {
 export async function fetchWithErrorHandlers(
   input: RequestInfo | URL,
   init?: RequestInit,
+  offlineSurface: Extract<Surface, "chat" | "agent"> = "chat",
 ) {
   try {
     const response = await fetch(input, init);
@@ -92,7 +93,7 @@ export async function fetchWithErrorHandlers(
     return response;
   } catch (error: unknown) {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      throw new ChatbotError('offline:chat');
+      throw new ChatbotError(`offline:${offlineSurface}`);
     }
 
     throw error;

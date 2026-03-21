@@ -38,12 +38,14 @@ type DocumentPreviewProps = {
   isReadonly: boolean;
   result?: Partial<DocumentToolOutput>;
   args?: Partial<DocumentToolOutput> & { isUpdate?: boolean };
+  interactive?: boolean;
 };
 
 export function DocumentPreview({
   isReadonly: _isReadonly,
   result,
   args,
+  interactive = true,
 }: DocumentPreviewProps) {
   const { artifact, setArtifact } = useArtifact();
 
@@ -56,7 +58,7 @@ export function DocumentPreview({
     fetcher
   );
 
-  const previewDocument = useMemo(() => documents?.[0], [documents]);
+  const previewDocument = useMemo(() => documents?.at(-1), [documents]);
   const hitboxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -117,12 +119,18 @@ export function DocumentPreview({
   }
 
   return (
-    <div className="relative w-full max-w-[450px] cursor-pointer">
-      <HitboxLayer
-        hitboxRef={hitboxRef}
-        result={result}
-        setArtifact={setArtifact}
-      />
+    <div
+      className={cn("relative w-full max-w-[450px]", {
+        "cursor-pointer": interactive,
+      })}
+    >
+      {interactive && (
+        <HitboxLayer
+          hitboxRef={hitboxRef}
+          result={result}
+          setArtifact={setArtifact}
+        />
+      )}
       <DocumentHeader
         isStreaming={artifact.status === "streaming"}
         kind={document.kind}

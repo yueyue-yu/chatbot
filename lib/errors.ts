@@ -8,6 +8,7 @@ export type ErrorType =
 
 export type Surface =
   | "chat"
+  | "agent"
   | "auth"
   | "api"
   | "stream"
@@ -25,6 +26,7 @@ export type ErrorVisibility = "response" | "log" | "none";
 export const visibilityBySurface: Record<Surface, ErrorVisibility> = {
   database: "log",
   chat: "response",
+  agent: "response",
   auth: "response",
   stream: "response",
   api: "response",
@@ -83,6 +85,8 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
   switch (errorCode) {
     case "bad_request:api":
       return "The request couldn't be processed. Please check your input and try again.";
+    case "bad_request:agent":
+      return "The agent request couldn't be processed. Please check your input and try again.";
 
     case "bad_request:provider":
       return "The model provider is not configured correctly. Please check your OpenAI-compatible settings and try again.";
@@ -102,6 +106,10 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
       return "You need to sign in to view this chat. Please sign in and try again.";
     case "offline:chat":
       return "We're having trouble sending your message. Please check your internet connection and try again.";
+    case "unauthorized:agent":
+      return "You need to sign in to use the agent demo. Please sign in and try again.";
+    case "offline:agent":
+      return "We're having trouble reaching the agent demo. Please check your internet connection and try again.";
 
     case "not_found:document":
       return "The requested document was not found. Please check the document ID and try again.";
