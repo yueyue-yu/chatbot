@@ -143,6 +143,7 @@ app/(chat)/
   消息投票接口。
 - `api/chat/[id]/stream/route.ts`
   流恢复相关接口。
+  更详细的实现现状、链路分析和待补齐点见：`docs/resume-stream.md`
 
 ## 4. components 目录
 
@@ -348,6 +349,10 @@ artifacts/
   表格类 Artifact
 - `image/`
   图片类 Artifact
+
+如果需要更细的职责拆解、流式协议说明、各类型差异和扩展方式，可继续阅读：
+
+- `docs/artifacts.md`
 
 ## 8. tests 目录
 

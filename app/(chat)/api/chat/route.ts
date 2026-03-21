@@ -49,7 +49,7 @@ export const maxDuration = 60;
 
 function getStreamContext() {
   try {
-    // 为 SSE 响应创建“可恢复流”上下文。
+    // 为 SSE 响应创”上下文。
     // 这样在 Redis 可用时，前端断线后仍有机会继续消费同一条流。
     return createResumableStreamContext({ waitUntil: after });
   } catch (_) {
