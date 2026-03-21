@@ -113,13 +113,12 @@ export function ChatShell() {
                     editingMessage
                       ? async () => {
                           const msg = editingMessage;
-                          setEditingMessage(null);
                           await submitEditedMessage({
                             message: msg,
+                            sendMessage,
                             text: input,
-                            setMessages,
-                            regenerate,
                           });
+                          setEditingMessage(null);
                           setInput("");
                         }
                       : sendMessage

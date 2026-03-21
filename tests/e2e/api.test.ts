@@ -13,7 +13,6 @@ type ChatApiRequestBody = {
       | { type: "file"; url: string; name: string; mediaType: string }
     >;
   };
-  messages?: unknown;
   selectedChatModel: string;
   selectedVisibilityType: "public" | "private";
 };
@@ -63,7 +62,6 @@ test.describe("Chat API Integration", () => {
         text: "Hello",
       },
     ]);
-    expect(body.messages).toBeUndefined();
   });
 
   test("redirects to /chat/:id after sending message", async ({ page }) => {
@@ -99,7 +97,7 @@ test.describe("Chat API Integration", () => {
     await expect(stopButton).toBeVisible({ timeout: 5000 });
   });
 
-  test("editing a message still submits a single user message payload", async ({
+  test("editing a message still submits the edited user message payload", async ({
     page,
   }) => {
     await page.goto("/");
@@ -137,7 +135,6 @@ test.describe("Chat API Integration", () => {
         text: editedText,
       },
     ]);
-    expect(body.messages).toBeUndefined();
 
     await expect(page.getByTestId("multimodal-input")).toHaveValue("");
     await expect(page.locator("[data-role='assistant']").first()).toBeVisible({

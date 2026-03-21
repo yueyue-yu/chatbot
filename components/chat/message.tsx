@@ -92,6 +92,44 @@ const PurePreviewMessage = ({
     { text: "", isStreaming: false, rendered: false }
   ) ?? { text: "", isStreaming: false, rendered: false };
 
+  const renderDocumentToolPreview = ({
+    errorLabel,
+    isUpdate = false,
+    part,
+  }: {
+    errorLabel: string;
+    isUpdate?: boolean;
+    part: Extract<
+      ChatMessage["parts"][number],
+      | { type: "tool-createDocument" }
+      | { type: "tool-editDocument" }
+      | { type: "tool-updateDocument" }
+    >;
+  }) => {
+    const { toolCallId } = part;
+
+    if (part.output && "error" in part.output) {
+      return (
+        <div
+          className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-500 dark:bg-red-950/50"
+          key={toolCallId}
+        >
+          {errorLabel}: {String(part.output.error)}
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative" key={toolCallId}>
+        <DocumentPreview
+          args={isUpdate ? { ...part.output, isUpdate: true } : undefined}
+          isReadonly={isReadonly}
+          result={part.output}
+        />
+      </div>
+    );
+  };
+
   const parts = message.parts?.map((part, index) => {
     const { type } = part;
     const key = `message-${message.id}-part-${index}`;
@@ -126,51 +164,25 @@ const PurePreviewMessage = ({
     }
 
     if (type === "tool-createDocument") {
-      const { toolCallId } = part;
+      return renderDocumentToolPreview({
+        errorLabel: "Error creating document",
+        part,
+      });
+    }
 
-      if (part.output && "error" in part.output) {
-        return (
-          <div
-            className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-500 dark:bg-red-950/50"
-            key={toolCallId}
-          >
-            Error creating document: {String(part.output.error)}
-          </div>
-        );
-      }
-
-      return (
-        <DocumentPreview
-          isReadonly={isReadonly}
-          key={toolCallId}
-          result={part.output}
-        />
-      );
+    if (type === "tool-editDocument") {
+      return renderDocumentToolPreview({
+        errorLabel: "Error editing document",
+        part,
+      });
     }
 
     if (type === "tool-updateDocument") {
-      const { toolCallId } = part;
-
-      if (part.output && "error" in part.output) {
-        return (
-          <div
-            className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-500 dark:bg-red-950/50"
-            key={toolCallId}
-          >
-            Error updating document: {String(part.output.error)}
-          </div>
-        );
-      }
-
-      return (
-        <div className="relative" key={toolCallId}>
-          <DocumentPreview
-            args={{ ...part.output, isUpdate: true }}
-            isReadonly={isReadonly}
-            result={part.output}
-          />
-        </div>
-      );
+      return renderDocumentToolPreview({
+        errorLabel: "Error updating document",
+        isUpdate: true,
+        part,
+      });
     }
 
     if (type === "tool-requestSuggestions") {

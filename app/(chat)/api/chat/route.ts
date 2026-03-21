@@ -1,30 +1,24 @@
 import { geolocation, ipAddress } from "@vercel/functions";
 import {
-  convertToModelMessages,
+  createAgentUIStream,
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateId,
-  stepCountIs,
-  streamText,
 } from "ai";
 import { checkBotId } from "botid/server";
 import { after } from "next/server";
 import { createResumableStreamContext } from "resumable-stream";
 import { auth, type UserType } from "@/app/(auth)/auth";
+import { createChatAgent } from "@/lib/agent/agent";
+import { sanitizeAgentUIMessages } from "@/lib/agent/sanitize-ui-messages";
 import { entitlementsByUserType } from "@/lib/ai/entitlements";
-import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
+import type { RequestHints } from "@/lib/ai/prompts";
 import {
   getModelCapabilities,
   resolveChatModel,
 } from "@/lib/ai/provider-config";
-import { getLanguageModel } from "@/lib/ai/providers";
-import { createDocument } from "@/lib/ai/tools/create-document";
-import { editDocument } from "@/lib/ai/tools/edit-document";
-import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
-import { updateDocument } from "@/lib/ai/tools/update-document";
 import {
   isDevelopmentEnvironment,
-  isProductionEnvironment,
   isVercelProductionEnvironment,
 } from "@/lib/constants";
 import {
@@ -96,6 +90,17 @@ export async function POST(request: Request) {
 
     // 规范化模型 id，避免直接使用前端传入值。
     const chatModel = resolveChatModel(selectedChatModel);
+    const capabilities = getModelCapabilities();
+
+    if (!capabilities.tools) {
+      return Response.json(
+        {
+          message:
+            "The current model provider does not support tool calling, so the /chat agent is unavailable.",
+        },
+        { status: 400 }
+      );
+    }
 
     // 先做基于 IP 的限流，拦截明显过快的请求。
     await checkIpRateLimit(ipAddress(request));
@@ -132,14 +137,16 @@ export async function POST(request: Request) {
         title: "New chat",
         visibility: selectedVisibilityType,
       });
-      titlePromise = generateTitleFromUserMessage({ message });
+      titlePromise = generateTitleFromUserMessage({
+        message,
+      });
     }
 
-    // 当前请求固定为单条用户消息：历史消息来自数据库，再拼上当前用户刚发来的这条消息。
-    const uiMessages: ChatMessage[] = [
-      ...convertToUIMessages(messagesFromDb),
+    const historyMessages = convertToUIMessages(messagesFromDb);
+    const uiMessages = sanitizeAgentUIMessages<ChatMessage>([
+      ...historyMessages,
       message as ChatMessage,
-    ];
+    ]);
 
     // 从请求中提取地理位置信息，用于 system prompt 给模型一些上下文提示。
     const { longitude, latitude, city, country } = geolocation(request);
@@ -165,67 +172,42 @@ export async function POST(request: Request) {
       ],
     });
 
-    // 根据当前模型配置判断：
-    // - 是否是 reasoning model
-    // - 是否支持 tools
-    // 后面会影响 system prompt、工具启用列表以及推理内容返回方式。
-    const capabilities = getModelCapabilities();
-    const isReasoningModel = capabilities.reasoning;
-    const supportsTools = capabilities.tools;
-
-    // 把 UI 消息格式转换成底层模型可消费的消息格式。
-    const modelMessages = await convertToModelMessages(uiMessages);
-
     // 创建 UI 消息流，统一处理：
-    // - 调用模型
+    // - 调用 ToolLoopAgent
     // - 把模型结果转成前端可消费的流
     // - 在结束时把生成结果持久化
-    const stream = createUIMessageStream({
+    const stream = createUIMessageStream<ChatMessage>({
+      originalMessages: uiMessages,
       execute: async ({ writer: dataStream }) => {
-        // 真正发起模型流式生成。
-        const result = streamText({
-          model: getLanguageModel(chatModel),
-          system: systemPrompt({ requestHints, supportsTools }),
-          messages: modelMessages,
-          // 最多允许 5 个 step，避免工具调用或推理链无限继续。
-          stopWhen: stepCountIs(5),
-          experimental_activeTools:
-            isReasoningModel && !supportsTools
-              ? []
-              : [
-                  "createDocument",
-                  "editDocument",
-                  "updateDocument",
-                  "requestSuggestions",
-                ],
-          // 注册所有允许模型调用的工具。
-          tools: {
-            createDocument: createDocument({
-              session,
-              dataStream,
-              modelId: chatModel,
-            }),
-            editDocument: editDocument({ dataStream, session }),
-            updateDocument: updateDocument({
-              session,
-              dataStream,
-              modelId: chatModel,
-            }),
-            requestSuggestions: requestSuggestions({
-              session,
-              dataStream,
-              modelId: chatModel,
-            }),
-          },
-          experimental_telemetry: {
-            isEnabled: isProductionEnvironment,
-            functionId: "stream-text",
-          },
+        const agent = createChatAgent({
+          dataStream,
+          modelId: chatModel,
+          requestHints,
+          session,
         });
 
-        // 把底层模型流转换并合并成 UI 消息流，持续推给前端。
+        const agentStream = await createAgentUIStream({
+          abortSignal: request.signal,
+          agent,
+          uiMessages,
+          onError: (error) => {
+            if (error instanceof ChatbotError) {
+              return error.message;
+            }
+
+            if (isDevelopmentEnvironment && error instanceof Error) {
+              return error.message;
+            }
+
+            return "Oops, an error occurred!";
+          },
+          sendReasoning: capabilities.reasoning,
+        });
+
         dataStream.merge(
-          result.toUIMessageStream({ sendReasoning: isReasoningModel })
+          agentStream as unknown as ReadableStream<
+            Parameters<typeof dataStream.write>[0]
+          >
         );
 
         if (titlePromise) {
@@ -237,20 +219,30 @@ export async function POST(request: Request) {
         }
       },
       generateId: generateUUID,
-      onFinish: async ({ messages: finishedMessages }) => {
-        // 流式生成结束后，把本次新增的 assistant 消息持久化。
-        if (finishedMessages.length > 0) {
-          await saveMessages({
-            messages: finishedMessages.map((currentMessage) => ({
-              id: currentMessage.id,
-              role: currentMessage.role,
-              parts: currentMessage.parts,
+      onFinish: async ({ isAborted, responseMessage }) => {
+        if (isAborted) {
+          return;
+        }
+
+        if (
+          responseMessage.role !== "assistant" ||
+          responseMessage.parts.length === 0
+        ) {
+          return;
+        }
+
+        await saveMessages({
+          messages: [
+            {
+              id: responseMessage.id,
+              role: responseMessage.role,
+              parts: responseMessage.parts,
               createdAt: new Date(),
               attachments: [],
               chatId: id,
-            })),
-          });
-        }
+            },
+          ],
+        });
       },
       onError: (error) => {
         // 业务错误返回可读提示；未知错误统一兜底。

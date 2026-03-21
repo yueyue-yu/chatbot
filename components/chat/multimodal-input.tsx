@@ -87,7 +87,7 @@ function PureMultimodalInput({
   input: string;
   setInput: Dispatch<SetStateAction<string>>;
   status: UseChatHelpers<ChatMessage>["status"];
-  stop: () => void;
+  stop: UseChatHelpers<ChatMessage>["stop"];
   attachments: Attachment[];
   setAttachments: Dispatch<SetStateAction<Attachment[]>>;
   messages: UIMessage[];
@@ -211,14 +211,14 @@ function PureMultimodalInput({
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
 
-  const submitForm = useCallback(() => {
+  const submitForm = useCallback(async () => {
     window.history.pushState(
       {},
       "",
       `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
     );
 
-    sendMessage({
+    await sendMessage({
       role: "user",
       parts: [
         ...attachments.map((attachment) => ({
@@ -416,7 +416,7 @@ function PureMultimodalInput({
 
       <PromptInput
         className="[&>div]:rounded-2xl [&>div]:border [&>div]:border-border/30 [&>div]:bg-card/70 [&>div]:shadow-[var(--shadow-composer)] [&>div]:transition-shadow [&>div]:duration-300 [&>div]:focus-within:shadow-[var(--shadow-composer-focus)]"
-        onSubmit={() => {
+        onSubmit={async () => {
           if (input.startsWith("/")) {
             const query = input.slice(1).trim();
             const cmd = slashCommands.find((c) => c.name === query);
@@ -429,10 +429,20 @@ function PureMultimodalInput({
             return;
           }
           if (status === "ready" || status === "error") {
-            submitForm();
-          } else {
-            toast.error("Please wait for the model to finish its response!");
+            await submitForm();
+            return;
           }
+
+          if (
+            editingMessage &&
+            (status === "submitted" || status === "streaming")
+          ) {
+            await stop();
+            await submitForm();
+            return;
+          }
+
+          toast.error("Please wait for the model to finish its response!");
         }}
       >
         {(attachments.length > 0 || uploadQueue.length > 0) && (
@@ -755,16 +765,16 @@ function PureStopButton({
   stop,
   setMessages,
 }: {
-  stop: () => void;
+  stop: UseChatHelpers<ChatMessage>["stop"];
   setMessages: UseChatHelpers<ChatMessage>["setMessages"];
 }) {
   return (
     <Button
       className="h-7 w-7 rounded-xl bg-foreground p-1 text-background transition-all duration-200 hover:opacity-85 active:scale-95 disabled:bg-muted disabled:text-muted-foreground/25 disabled:cursor-not-allowed"
       data-testid="stop-button"
-      onClick={(event) => {
+      onClick={async (event) => {
         event.preventDefault();
-        stop();
+        await stop();
         setMessages((messages) => messages);
       }}
     >
