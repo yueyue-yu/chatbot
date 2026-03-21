@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="https://chatbot.dev"><strong>Read Docs</strong></a> ·
+  <a href="#project-structure"><strong>Project Structure</strong></a> ·
   <a href="#features"><strong>Features</strong></a> ·
   <a href="#model-providers"><strong>Model Providers</strong></a> ·
   <a href="#deploy-your-own"><strong>Deploy Your Own</strong></a> ·
@@ -51,6 +52,10 @@ These flags control attachment support, tool availability, and reasoning UI beha
 You can deploy your own version of Chatbot to Vercel with one click:
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/templates/next.js/chatbot)
+
+## Project Structure
+
+For a maintainer-oriented walkthrough of the repository layout, request flow, and key entry points, see [docs/project-structure.md](docs/project-structure.md).
 
 ## Running locally
 

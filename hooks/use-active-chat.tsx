@@ -35,7 +35,6 @@ type ActiveChatContextValue = {
   status: UseChatHelpers<ChatMessage>["status"];
   stop: UseChatHelpers<ChatMessage>["stop"];
   regenerate: UseChatHelpers<ChatMessage>["regenerate"];
-  addToolApprovalResponse: UseChatHelpers<ChatMessage>["addToolApprovalResponse"];
   input: string;
   setInput: Dispatch<SetStateAction<string>>;
   visibilityType: VisibilityType;
@@ -113,45 +112,24 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     stop,
     regenerate,
     resumeStream,
-    addToolApprovalResponse,
   } = useChat<ChatMessage>({
     id: chatId,
     messages: initialMessages,
     generateId: generateUUID,
-    sendAutomaticallyWhen: ({ messages: currentMessages }) => {
-      const lastMessage = currentMessages.at(-1);
-      return (
-        lastMessage?.parts?.some(
-          (part) =>
-            "state" in part &&
-            part.state === "approval-responded" &&
-            "approval" in part &&
-            (part.approval as { approved?: boolean })?.approved === true
-        ) ?? false
-      );
-    },
     transport: new DefaultChatTransport({
       api: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/chat`,
       fetch: fetchWithErrorHandlers,
       prepareSendMessagesRequest(request) {
         const lastMessage = request.messages.at(-1);
-        const isToolApprovalContinuation =
-          lastMessage?.role !== "user" ||
-          request.messages.some((msg) =>
-            msg.parts?.some((part) => {
-              const state = (part as { state?: string }).state;
-              return (
-                state === "approval-responded" || state === "output-denied"
-              );
-            })
-          );
+
+        if (!lastMessage || lastMessage.role !== "user") {
+          throw new Error("Chat submissions must end with a user message.");
+        }
 
         return {
           body: {
             id: request.id,
-            ...(isToolApprovalContinuation
-              ? { messages: request.messages }
-              : { message: lastMessage }),
+            message: lastMessage,
             selectedChatModel: currentModelIdRef.current,
             selectedVisibilityType: visibilityType,
             ...request.body,
@@ -258,7 +236,6 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       status,
       stop,
       regenerate,
-      addToolApprovalResponse,
       input,
       setInput,
       visibilityType,
@@ -276,7 +253,6 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       status,
       stop,
       regenerate,
-      addToolApprovalResponse,
       input,
       visibilityType,
       isReadonly,

@@ -2,7 +2,6 @@ import type { LanguageModel } from "ai";
 
 const mockResponses: Record<string, string> = {
   default: "This is a mock response for testing.",
-  weather: "The weather in San Francisco is sunny and 72°F.",
   greeting: "Hello! How can I help you today?",
 };
 
@@ -14,9 +13,6 @@ const mockUsage = {
 function getResponseForPrompt(prompt: unknown): string {
   const promptStr = JSON.stringify(prompt).toLowerCase();
 
-  if (promptStr.includes("weather") || promptStr.includes("temperature")) {
-    return mockResponses.weather;
-  }
   if (
     promptStr.includes("hello") ||
     promptStr.includes("hi") ||

@@ -25,7 +25,6 @@ export function ChatShell() {
     status,
     stop,
     regenerate,
-    addToolApprovalResponse,
     input,
     setInput,
     visibilityType,
@@ -74,7 +73,6 @@ export function ChatShell() {
 
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-tl-[12px] md:border-t md:border-l md:border-border/40">
             <Messages
-              addToolApprovalResponse={addToolApprovalResponse}
               chatId={chatId}
               isArtifactVisible={isArtifactVisible}
               isLoading={isLoading}
@@ -138,7 +136,6 @@ export function ChatShell() {
         </div>
 
         <Artifact
-          addToolApprovalResponse={addToolApprovalResponse}
           attachments={attachments}
           chatId={chatId}
           input={input}

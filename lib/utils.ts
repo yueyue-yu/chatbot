@@ -13,12 +13,60 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+async function readErrorResponse(response: Response) {
+  try {
+    const payload = await response.clone().json();
+
+    if (payload && typeof payload === "object") {
+      const { code, cause, error, message } = payload as Record<string, unknown>;
+
+      return {
+        cause: typeof cause === "string" ? cause : undefined,
+        code: typeof code === "string" ? code : undefined,
+        message:
+          typeof message === "string"
+            ? message
+            : typeof error === "string"
+              ? error
+              : undefined,
+      };
+    }
+  } catch (_error) {
+    try {
+      const text = await response.clone().text();
+
+      return {
+        cause: undefined,
+        code: undefined,
+        message: text || undefined,
+      };
+    } catch (_nestedError) {
+      return {
+        cause: undefined,
+        code: undefined,
+        message: undefined,
+      };
+    }
+  }
+
+  return {
+    cause: undefined,
+    code: undefined,
+    message: undefined,
+  };
+}
+
 export const fetcher = async (url: string) => {
   const response = await fetch(url);
 
   if (!response.ok) {
-    const { code, cause } = await response.json();
-    throw new ChatbotError(code as ErrorCode, cause);
+    const { code, cause, message } = await readErrorResponse(response);
+
+    if (code) {
+      throw new ChatbotError(code as ErrorCode, cause);
+    }
+
+    throw new Error(message || `Request failed with status ${response.status}`);
   }
 
   return response.json();
@@ -32,8 +80,13 @@ export async function fetchWithErrorHandlers(
     const response = await fetch(input, init);
 
     if (!response.ok) {
-      const { code, cause } = await response.json();
-      throw new ChatbotError(code as ErrorCode, cause);
+      const { code, cause, message } = await readErrorResponse(response);
+
+      if (code) {
+        throw new ChatbotError(code as ErrorCode, cause);
+      }
+
+      throw new Error(message || `Request failed with status ${response.status}`);
     }
 
     return response;

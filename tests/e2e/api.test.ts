@@ -3,6 +3,25 @@ import { expect, test } from "@playwright/test";
 const CHAT_URL_REGEX = /\/chat\/[\w-]+/;
 const ERROR_TEXT_REGEX = /error|failed|trouble/i;
 
+type ChatApiRequestBody = {
+  id: string;
+  message: {
+    id: string;
+    role: "user";
+    parts: Array<
+      | { type: "text"; text: string }
+      | { type: "file"; url: string; name: string; mediaType: string }
+    >;
+  };
+  messages?: unknown;
+  selectedChatModel: string;
+  selectedVisibilityType: "public" | "private";
+};
+
+function getChatRequestBody(request: { postDataJSON(): unknown }) {
+  return request.postDataJSON() as ChatApiRequestBody;
+}
+
 test.describe("Chat API Integration", () => {
   test("sends message and receives AI response", async ({ page }) => {
     await page.goto("/");
@@ -18,6 +37,33 @@ test.describe("Chat API Integration", () => {
     // Verify it has some text content
     const content = await assistantMessage.textContent();
     expect(content?.length).toBeGreaterThan(0);
+  });
+
+  test("sends only the latest user message in /api/chat request body", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const input = page.getByTestId("multimodal-input");
+    const requestPromise = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/chat") && request.method() === "POST"
+    );
+
+    await input.fill("Hello");
+    await page.getByTestId("send-button").click();
+
+    const request = await requestPromise;
+    const body = getChatRequestBody(request);
+
+    expect(body.message.role).toBe("user");
+    expect(body.message.parts).toEqual([
+      {
+        type: "text",
+        text: "Hello",
+      },
+    ]);
+    expect(body.messages).toBeUndefined();
   });
 
   test("redirects to /chat/:id after sending message", async ({ page }) => {
@@ -51,6 +97,52 @@ test.describe("Chat API Integration", () => {
     // Stop button should appear during generation
     const stopButton = page.getByTestId("stop-button");
     await expect(stopButton).toBeVisible({ timeout: 5000 });
+  });
+
+  test("editing a message still submits a single user message payload", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const input = page.getByTestId("multimodal-input");
+    await input.fill("Original message");
+    await page.getByTestId("send-button").click();
+
+    const assistantMessage = page.locator("[data-role='assistant']").first();
+    await expect(assistantMessage).toBeVisible({ timeout: 30_000 });
+
+    await page.getByTestId("message-user").first().hover();
+    await page.getByTestId("message-edit-button").first().click({
+      force: true,
+    });
+
+    await expect(input).toHaveValue("Original message");
+
+    const editedText = "Edited message";
+    const requestPromise = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/chat") && request.method() === "POST"
+    );
+
+    await input.fill(editedText);
+    await page.getByTestId("send-button").click();
+
+    const request = await requestPromise;
+    const body = getChatRequestBody(request);
+
+    expect(body.message.role).toBe("user");
+    expect(body.message.parts).toEqual([
+      {
+        type: "text",
+        text: editedText,
+      },
+    ]);
+    expect(body.messages).toBeUndefined();
+
+    await expect(page.getByTestId("multimodal-input")).toHaveValue("");
+    await expect(page.locator("[data-role='assistant']").first()).toBeVisible({
+      timeout: 30_000,
+    });
   });
 });
 

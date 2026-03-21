@@ -23,6 +23,7 @@ const nextConfig: NextConfig = {
     : {}),
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
+    NEXT_PUBLIC_BOTID_ENABLED: isVercelProductionEnvironment ? "true" : "false",
   },
   cacheComponents: true,
   devIndicators: false,
