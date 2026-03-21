@@ -122,13 +122,15 @@ function PureMultimodalInput({
     "input",
     ""
   );
+  const hasRestoredDraft = useRef(false);
 
   useEffect(() => {
-    if (textareaRef.current) {
-      const domValue = textareaRef.current.value;
-      const finalValue = domValue || localStorageInput || "";
-      setInput(finalValue);
+    if (hasRestoredDraft.current || !localStorageInput) {
+      return;
     }
+
+    hasRestoredDraft.current = true;
+    setInput((currentInput) => currentInput || localStorageInput);
   }, [localStorageInput, setInput]);
 
   useEffect(() => {

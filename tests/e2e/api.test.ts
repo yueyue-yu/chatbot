@@ -86,6 +86,28 @@ test.describe("Chat API Integration", () => {
     await expect(input).toHaveValue("");
   });
 
+  test("restored draft stays cleared after sending", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("input", JSON.stringify("Persisted draft"));
+    });
+
+    await page.goto("/");
+
+    const input = page.getByTestId("multimodal-input");
+    await expect(input).toHaveValue("Persisted draft");
+
+    const requestPromise = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/chat") && request.method() === "POST"
+    );
+
+    await page.getByTestId("send-button").click();
+    await requestPromise;
+    await expect(input).toHaveValue("");
+    await page.waitForTimeout(150);
+    await expect(input).toHaveValue("");
+  });
+
   test("shows stop button during generation", async ({ page }) => {
     await page.goto("/");
     const input = page.getByTestId("multimodal-input");
