@@ -22,6 +22,31 @@ function getChatRequestBody(request: { postDataJSON(): unknown }) {
   return request.postDataJSON() as ChatApiRequestBody;
 }
 
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+
+  return { promise, resolve };
+}
+
+function createUiMessageStreamBody(text: string) {
+  const chunks = [
+    { type: "start" },
+    { type: "start-step" },
+    { type: "text-start", id: "text-1" },
+    { type: "text-delta", id: "text-1", delta: text },
+    { type: "text-end", id: "text-1" },
+    { type: "finish-step" },
+    { type: "finish", finishReason: "stop" },
+  ];
+
+  return `${chunks
+    .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+    .join("")}data: [DONE]\n\n`;
+}
+
 test.describe("Chat API Integration", () => {
   test.beforeEach(async ({ page }) => {
     await registerAndAuthenticate(page);
@@ -80,15 +105,41 @@ test.describe("Chat API Integration", () => {
     await expect(page).toHaveURL(CHAT_URL_REGEX, { timeout: 10_000 });
   });
 
-  test("clears input after sending", async ({ page }) => {
+  test("clears input immediately after sending", async ({ page }) => {
     await page.goto("/");
 
+    const delayedResponse = createDeferred();
+    await page.route("**/api/chat", async (route) => {
+      await delayedResponse.promise;
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body: createUiMessageStreamBody("Delayed response"),
+      });
+    });
+
     const input = page.getByTestId("multimodal-input");
+    const requestPromise = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/chat") && request.method() === "POST"
+    );
+
     await input.fill("Test message");
     await page.getByTestId("send-button").click();
+    await requestPromise;
 
-    // Input should be cleared
+    // Input should clear before the delayed response finishes.
     await expect(input).toHaveValue("");
+
+    delayedResponse.resolve();
+    await expect(page.locator("[data-role='assistant']").first()).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test("restored draft stays cleared after sending", async ({ page }) => {
@@ -144,6 +195,21 @@ test.describe("Chat API Integration", () => {
     await expect(input).toHaveValue("Original message");
 
     const editedText = "Edited message";
+    const delayedResponse = createDeferred();
+    await page.route("**/api/chat", async (route) => {
+      await delayedResponse.promise;
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body: createUiMessageStreamBody("Edited response"),
+      });
+    });
+
     const requestPromise = page.waitForRequest(
       (request) =>
         request.url().includes("/api/chat") && request.method() === "POST"
@@ -164,9 +230,7 @@ test.describe("Chat API Integration", () => {
     ]);
 
     await expect(page.getByTestId("multimodal-input")).toHaveValue("");
-    await expect(page.locator("[data-role='assistant']").first()).toBeVisible({
-      timeout: 30_000,
-    });
+    delayedResponse.resolve();
   });
 });
 

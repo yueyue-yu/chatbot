@@ -214,16 +214,19 @@ function PureMultimodalInput({
   const [slashIndex, setSlashIndex] = useState(0);
 
   const submitForm = useCallback(async () => {
+    const pendingText = input;
+    const pendingAttachments = attachments;
+
     window.history.pushState(
       {},
       "",
       `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
     );
 
-    await sendMessage({
+    const pendingMessage = {
       role: "user",
       parts: [
-        ...attachments.map((attachment) => ({
+        ...pendingAttachments.map((attachment) => ({
           type: "file" as const,
           url: attachment.url,
           name: attachment.name,
@@ -231,14 +234,16 @@ function PureMultimodalInput({
         })),
         {
           type: "text",
-          text: input,
+          text: pendingText,
         },
       ],
-    });
+    };
 
     setAttachments([]);
     setLocalStorageInput("");
     setInput("");
+
+    await sendMessage(pendingMessage);
 
     if (width && width > 768) {
       textareaRef.current?.focus();
