@@ -8,10 +8,10 @@ import {
 import { checkBotId } from "botid/server";
 import { after } from "next/server";
 import { createResumableStreamContext } from "resumable-stream";
-import { auth, type UserType } from "@/app/(auth)/auth";
+import { requireSession } from "@/app/(auth)/auth";
 import { createChatAgent } from "@/lib/agent/agent";
 import { sanitizeAgentUIMessages } from "@/lib/agent/sanitize-ui-messages";
-import { entitlementsByUserType } from "@/lib/ai/entitlements";
+import { regularUserEntitlements } from "@/lib/ai/entitlements";
 import type { RequestHints } from "@/lib/ai/prompts";
 import {
   getModelCapabilities,
@@ -81,12 +81,8 @@ export async function POST(request: Request) {
       isVercelProductionEnvironment
         ? checkBotId().catch(() => null)
         : Promise.resolve(null),
-      auth(),
+      requireSession("chat"),
     ]);
-
-    if (!session?.user) {
-      return new ChatbotError("unauthorized:chat").toResponse();
-    }
 
     // 规范化模型 id，避免直接使用前端传入值。
     const chatModel = resolveChatModel(selectedChatModel);
@@ -105,15 +101,13 @@ export async function POST(request: Request) {
     // 先做基于 IP 的限流，拦截明显过快的请求。
     await checkIpRateLimit(ipAddress(request));
 
-    const userType: UserType = session.user.type;
-
     // 再做基于用户身份的额度校验，例如 1 小时内可发送消息数。
     const messageCount = await getMessageCountByUserId({
       id: session.user.id,
       differenceInHours: 1,
     });
 
-    if (messageCount > entitlementsByUserType[userType].maxMessagesPerHour) {
+    if (messageCount > regularUserEntitlements.maxMessagesPerHour) {
       return new ChatbotError("rate_limit:chat").toResponse();
     }
 
@@ -303,11 +297,7 @@ export async function DELETE(request: Request) {
     return new ChatbotError("bad_request:api").toResponse();
   }
 
-  const session = await auth();
-
-  if (!session?.user) {
-    return new ChatbotError("unauthorized:chat").toResponse();
-  }
+  const session = await requireSession("chat");
 
   // 只允许删除当前登录用户自己的 chat。
   const chat = await getChatById({ id });

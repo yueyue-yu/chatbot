@@ -239,6 +239,10 @@ app/(chat)/
 - `use-mobile.ts`
   移动端检测。
 
+如果需要更细的 hook 职责拆解、相互关系和调用链说明，可继续阅读：
+
+- `docs/hooks.md`
+
 ## 6. lib 目录
 
 `lib/` 是项目的核心逻辑层。
@@ -353,6 +357,23 @@ artifacts/
 如果需要更细的职责拆解、流式协议说明、各类型差异和扩展方式，可继续阅读：
 
 - `docs/artifacts.md`
+
+### 7.1 agent 模块
+
+`/agent` 是一个独立于主聊天页的 agent demo，包含：
+
+- `app/agent/page.tsx`
+  Agent 页面入口
+- `app/api/agent/route.ts`
+  Agent 接口
+- `components/agent/`
+  Agent 专属 UI
+- `lib/agent/`
+  Agent 装配、prompt、类型与消息清洗
+
+如果需要详细分析 `/agent` 的页面逻辑、工具链路、Artifact 面板交互和设计边界，可继续阅读：
+
+- `docs/agent.md`
 
 ## 8. tests 目录
 

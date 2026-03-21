@@ -14,6 +14,7 @@ import {
 import useSWR, { useSWRConfig } from "swr";
 import { useWindowSize } from "usehooks-ts";
 import { codeArtifact } from "@/artifacts/code/client";
+import { htmlArtifact } from "@/artifacts/html/client";
 import { imageArtifact } from "@/artifacts/image/client";
 import { sheetArtifact } from "@/artifacts/sheet/client";
 import { textArtifact } from "@/artifacts/text/client";
@@ -32,6 +33,7 @@ import type { VisibilityType } from "./visibility-selector";
 export const artifactDefinitions = [
   textArtifact,
   codeArtifact,
+  htmlArtifact,
   imageArtifact,
   sheetArtifact,
 ];
@@ -51,6 +53,59 @@ export type UIArtifact = {
     height: number;
   };
 };
+
+type HtmlArtifactMetadata = {
+  view?: "source" | "preview";
+};
+
+function HtmlArtifactViewToggle({
+  status,
+  view,
+  onViewChange,
+}: {
+  status: "streaming" | "idle";
+  view: "source" | "preview";
+  onViewChange: (view: "source" | "preview") => void;
+}) {
+  const baseButtonClassName =
+    "rounded-full px-3 py-1 text-xs font-medium transition-colors";
+
+  return (
+    <div className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/70 p-1">
+      <button
+        className={`${baseButtonClassName} ${
+          view === "source"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+        data-testid="html-artifact-source-tab"
+        onClick={() => {
+          onViewChange("source");
+        }}
+        type="button"
+      >
+        Source
+      </button>
+
+      {status === "idle" && (
+        <button
+          className={`${baseButtonClassName} ${
+            view === "preview"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          data-testid="html-artifact-preview-tab"
+          onClick={() => {
+            onViewChange("preview");
+          }}
+          type="button"
+        >
+          Preview
+        </button>
+      )}
+    </div>
+  );
+}
 
 function PureArtifact({
   chatId: _chatId,
@@ -86,6 +141,7 @@ function PureArtifact({
   selectedModelId: string;
 }) {
   const { artifact, setArtifact, metadata, setMetadata } = useArtifact();
+  const isHtmlArtifact = artifact.kind === "html";
 
   const {
     data: documents,
@@ -282,6 +338,23 @@ function PureArtifact({
     }
   }, [artifact.documentId, artifactDefinition, setMetadata]);
 
+  useEffect(() => {
+    if (!isHtmlArtifact || artifact.status !== "streaming") {
+      return;
+    }
+
+    setMetadata((currentMetadata: HtmlArtifactMetadata | null) => {
+      if (currentMetadata?.view === "source") {
+        return currentMetadata;
+      }
+
+      return {
+        ...(currentMetadata ?? {}),
+        view: "source",
+      };
+    });
+  }, [artifact.status, isHtmlArtifact, setMetadata]);
+
   if (!artifact.isVisible && !isMobile) {
     return (
       <div
@@ -302,6 +375,10 @@ function PureArtifact({
         o.contents.filter((c) => c.type === "text").map((c) => c.value)
       )
       .join("\n") || undefined;
+
+  const htmlView = isHtmlArtifact
+    ? ((metadata as HtmlArtifactMetadata | null)?.view ?? "source")
+    : "source";
 
   const artifactPanel = (
     <>
@@ -341,6 +418,19 @@ function PureArtifact({
               </div>
             </div>
           </div>
+
+          {isHtmlArtifact ? (
+            <HtmlArtifactViewToggle
+              onViewChange={(view) => {
+                setMetadata((currentMetadata: HtmlArtifactMetadata | null) => ({
+                  ...(currentMetadata ?? {}),
+                  view,
+                }));
+              }}
+              status={artifact.status}
+              view={htmlView}
+            />
+          ) : null}
         </div>
       )}
       <div

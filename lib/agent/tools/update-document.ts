@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import { isResourceOwner } from "@/app/(auth)/auth";
 import { documentHandlersByArtifactKind } from "@/lib/artifacts/server";
 import { getDocumentById } from "@/lib/db/queries";
 import type { ChatMessage } from "@/lib/types";
@@ -35,7 +36,7 @@ export const updateDocument = ({
         };
       }
 
-      if (document.userId !== session.user?.id) {
+      if (!isResourceOwner(document, session.user.id)) {
         return { error: "Forbidden" };
       }
 
@@ -71,7 +72,9 @@ export const updateDocument = ({
         content:
           document.kind === "code"
             ? "The script has been updated successfully."
-            : "The document has been updated successfully.",
+            : document.kind === "html"
+              ? "The HTML page has been updated successfully."
+              : "The document has been updated successfully.",
       };
     },
   });

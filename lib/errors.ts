@@ -120,6 +120,16 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
     case "bad_request:document":
       return "The request to create or update the document was invalid. Please check your input and try again.";
 
+    case "unauthorized:vote":
+      return "You need to sign in to vote on chat messages. Please sign in and try again.";
+    case "forbidden:vote":
+      return "You do not have access to vote on this chat.";
+
+    case "unauthorized:suggestions":
+      return "You need to sign in to view document suggestions. Please sign in and try again.";
+    case "forbidden:suggestions":
+      return "You do not have access to view suggestions for this document.";
+
     default:
       return "Something went wrong. Please try again later.";
   }

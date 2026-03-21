@@ -1,19 +1,21 @@
 import { expect, test } from "@playwright/test";
+import { registerAndAuthenticate } from "../helpers";
 
 const DEFAULT_MODEL = process.env.OPENAI_COMPAT_DEFAULT_MODEL ?? "chat-model";
 
 test.describe("Model Selector", () => {
   test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
     await page.goto("/");
   });
 
   test("displays a model button", async ({ page }) => {
-    const modelButton = page.getByTestId("model-selector");
+    const modelButton = page.getByTestId("model-selector").first();
     await expect(modelButton).toBeVisible();
   });
 
   test("opens model selector popover on click", async ({ page }) => {
-    const modelButton = page.getByTestId("model-selector");
+    const modelButton = page.getByTestId("model-selector").first();
     await modelButton.click();
 
     await expect(
@@ -22,7 +24,7 @@ test.describe("Model Selector", () => {
   });
 
   test("can search for models", async ({ page }) => {
-    const modelButton = page.getByTestId("model-selector");
+    const modelButton = page.getByTestId("model-selector").first();
     await modelButton.click();
 
     const searchInput = page.getByPlaceholder("Search or enter model...");
@@ -32,7 +34,7 @@ test.describe("Model Selector", () => {
   });
 
   test("can close model selector by clicking outside", async ({ page }) => {
-    const modelButton = page.getByTestId("model-selector");
+    const modelButton = page.getByTestId("model-selector").first();
     await modelButton.click();
 
     await expect(
@@ -47,14 +49,14 @@ test.describe("Model Selector", () => {
   });
 
   test("shows model provider groups", async ({ page }) => {
-    const modelButton = page.getByTestId("model-selector");
+    const modelButton = page.getByTestId("model-selector").first();
     await modelButton.click();
 
     await expect(page.getByText("OpenAI Compatible")).toBeVisible();
   });
 
   test("can select a custom model", async ({ page }) => {
-    const modelButton = page.getByTestId("model-selector");
+    const modelButton = page.getByTestId("model-selector").first();
     await modelButton.click();
 
     const searchInput = page.getByPlaceholder("Search or enter model...");

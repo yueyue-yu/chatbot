@@ -2,7 +2,7 @@
 
 import { generateText, type UIMessage } from "ai";
 import { cookies } from "next/headers";
-import { auth } from "@/app/(auth)/auth";
+import { assertResourceOwner, requireUser } from "@/app/(auth)/auth";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { titlePrompt } from "@/lib/ai/prompts";
 import { getTitleModel } from "@/lib/ai/providers";
@@ -36,20 +36,17 @@ export async function generateTitleFromUserMessage({
 }
 
 export async function deleteTrailingMessages({ id }: { id: string }) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    throw new Error("Unauthorized");
-  }
+  const user = await requireUser("chat");
 
   const [message] = await getMessageById({ id });
   if (!message) {
     throw new Error("Message not found");
   }
 
-  const chat = await getChatById({ id: message.chatId });
-  if (!chat || chat.userId !== session.user.id) {
-    throw new Error("Unauthorized");
-  }
+  assertResourceOwner(await getChatById({ id: message.chatId }), user.id, {
+    forbidden: "forbidden:chat",
+    notFound: "not_found:chat",
+  });
 
   await deleteMessagesByChatIdAfterTimestamp({
     chatId: message.chatId,
@@ -64,10 +61,7 @@ export async function updateChatVisibility({
   chatId: string;
   visibility: VisibilityType;
 }) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    throw new Error("Unauthorized");
-  }
+  const user = await requireUser("chat");
 
   const chat = await getChatById({ id: chatId });
 
@@ -76,9 +70,9 @@ export async function updateChatVisibility({
     return;
   }
 
-  if (chat.userId !== session.user.id) {
-    throw new Error("Unauthorized");
-  }
+  assertResourceOwner(chat, user.id, {
+    forbidden: "forbidden:chat",
+  });
 
   await updateChatVisibilityById({ chatId, visibility });
 }

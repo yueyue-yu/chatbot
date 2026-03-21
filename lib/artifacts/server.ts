@@ -1,6 +1,7 @@
 import type { UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { codeDocumentHandler } from "@/artifacts/code/server";
+import { htmlDocumentHandler } from "@/artifacts/html/server";
 import { sheetDocumentHandler } from "@/artifacts/sheet/server";
 import { textDocumentHandler } from "@/artifacts/text/server";
 import type { ArtifactKind } from "@/components/chat/artifact";
@@ -54,15 +55,13 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         modelId: args.modelId,
       });
 
-      if (args.session?.user?.id) {
-        await saveDocument({
-          id: args.id,
-          title: args.title,
-          content: draftContent,
-          kind: config.kind,
-          userId: args.session.user.id,
-        });
-      }
+      await saveDocument({
+        id: args.id,
+        title: args.title,
+        content: draftContent,
+        kind: config.kind,
+        userId: args.session.user.id,
+      });
 
       return;
     },
@@ -75,15 +74,13 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         modelId: args.modelId,
       });
 
-      if (args.session?.user?.id) {
-        await saveDocument({
-          id: args.document.id,
-          title: args.document.title,
-          content: draftContent,
-          kind: config.kind,
-          userId: args.session.user.id,
-        });
-      }
+      await saveDocument({
+        id: args.document.id,
+        title: args.document.title,
+        content: draftContent,
+        kind: config.kind,
+        userId: args.session.user.id,
+      });
 
       return;
     },
@@ -93,7 +90,8 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
 export const documentHandlersByArtifactKind: DocumentHandler[] = [
   textDocumentHandler,
   codeDocumentHandler,
+  htmlDocumentHandler,
   sheetDocumentHandler,
 ];
 
-export const artifactKinds = ["text", "code", "sheet"] as const;
+export const artifactKinds = ["text", "code", "html", "sheet"] as const;

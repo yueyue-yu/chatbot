@@ -21,13 +21,13 @@ export const createDocument = ({
 }: CreateDocumentProps) =>
   tool({
     description:
-      "Create an artifact. You MUST specify kind: use 'code' for any programming/algorithm request (creates a script), 'text' for essays/writing (creates a document), 'sheet' for spreadsheets/data.",
+      "Create an artifact. You MUST specify kind: use 'code' for any programming/algorithm request (creates a script), 'text' for essays/writing (creates a document), 'sheet' for spreadsheets/data, and 'html' for self-contained HTML pages or web demos.",
     inputSchema: z.object({
       title: z.string().describe("The title of the artifact"),
       kind: z
         .enum(artifactKinds)
         .describe(
-          "REQUIRED. 'code' for programming/algorithms, 'text' for essays/writing, 'sheet' for spreadsheets"
+          "REQUIRED. 'code' for programming/algorithms, 'text' for essays/writing, 'sheet' for spreadsheets, 'html' for self-contained HTML pages"
         ),
     }),
     execute: async ({ title, kind }) => {
@@ -83,7 +83,9 @@ export const createDocument = ({
         content:
           kind === "code"
             ? "A script was created and is now visible to the user."
-            : "A document was created and is now visible to the user.",
+            : kind === "html"
+              ? "An HTML page was created and is now visible to the user."
+              : "A document was created and is now visible to the user.",
       };
     },
   });

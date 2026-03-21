@@ -1,6 +1,7 @@
 import { Output, streamText, tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import { isResourceOwner } from "@/app/(auth)/auth";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { getDocumentById, saveSuggestions } from "@/lib/db/queries";
 import type { Suggestion } from "@/lib/db/schema";
@@ -37,7 +38,7 @@ export const requestSuggestions = ({
         };
       }
 
-      if (document.userId !== session.user?.id) {
+      if (!isResourceOwner(document, session.user.id)) {
         return { error: "Forbidden" };
       }
 
@@ -98,18 +99,14 @@ export const requestSuggestions = ({
         }
       }
 
-      if (session.user?.id) {
-        const userId = session.user.id;
-
-        await saveSuggestions({
-          suggestions: suggestions.map((suggestion) => ({
-            ...suggestion,
-            userId,
-            createdAt: new Date(),
-            documentCreatedAt: document.createdAt,
-          })),
-        });
-      }
+      await saveSuggestions({
+        suggestions: suggestions.map((suggestion) => ({
+          ...suggestion,
+          userId: session.user.id,
+          createdAt: new Date(),
+          documentCreatedAt: document.createdAt,
+        })),
+      });
 
       return {
         id: documentId,

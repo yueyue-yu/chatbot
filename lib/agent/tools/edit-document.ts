@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import { isResourceOwner } from "@/app/(auth)/auth";
 import { getDocumentById, saveDocument } from "@/lib/db/queries";
 import type { ChatMessage } from "@/lib/types";
 
@@ -35,7 +36,7 @@ export const editDocument = ({ session, dataStream }: EditDocumentProps) =>
         return { error: "Document not found" };
       }
 
-      if (document.userId !== session.user?.id) {
+      if (!isResourceOwner(document, session.user.id)) {
         return { error: "Forbidden" };
       }
 
@@ -71,6 +72,12 @@ export const editDocument = ({ session, dataStream }: EditDocumentProps) =>
           data: updated,
           transient: true,
         });
+      } else if (document.kind === "html") {
+        dataStream.write({
+          type: "data-htmlDelta",
+          data: updated,
+          transient: true,
+        });
       } else if (document.kind === "sheet") {
         dataStream.write({
           type: "data-sheetDelta",
@@ -94,7 +101,9 @@ export const editDocument = ({ session, dataStream }: EditDocumentProps) =>
         content:
           document.kind === "code"
             ? "The script has been edited successfully."
-            : "The document has been edited successfully.",
+            : document.kind === "html"
+              ? "The HTML page has been edited successfully."
+              : "The document has been edited successfully.",
       };
     },
   });

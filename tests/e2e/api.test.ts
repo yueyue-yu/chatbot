@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { registerAndAuthenticate } from "../helpers";
 
 const CHAT_URL_REGEX = /\/chat\/[\w-]+/;
 const ERROR_TEXT_REGEX = /error|failed|trouble/i;
@@ -22,6 +23,10 @@ function getChatRequestBody(request: { postDataJSON(): unknown }) {
 }
 
 test.describe("Chat API Integration", () => {
+  test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
+  });
+
   test("sends message and receives AI response", async ({ page }) => {
     await page.goto("/");
 
@@ -144,6 +149,10 @@ test.describe("Chat API Integration", () => {
 });
 
 test.describe("Chat Error Handling", () => {
+  test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
+  });
+
   test("handles API error gracefully", async ({ page }) => {
     await page.route("**/api/chat", async (route) => {
       await route.fulfill({
@@ -166,6 +175,10 @@ test.describe("Chat Error Handling", () => {
 });
 
 test.describe("Suggested Actions", () => {
+  test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
+  });
+
   test("suggested actions are clickable", async ({ page }) => {
     await page.goto("/");
 
@@ -180,5 +193,69 @@ test.describe("Suggested Actions", () => {
       // Should redirect after clicking suggestion
       await expect(page).toHaveURL(CHAT_URL_REGEX, { timeout: 10_000 });
     }
+  });
+});
+
+test.describe("Authentication Requirements", () => {
+  test("rejects unauthenticated API access", async ({ page }) => {
+    await page.goto("/login");
+
+    const result = await page.evaluate(async () => {
+      const response = await fetch("/api/history");
+
+      return {
+        payload: await response.json(),
+        status: response.status,
+      };
+    });
+
+    expect(result.status).toBe(401);
+    expect(result.payload.message).toMatch(/sign in/i);
+  });
+});
+
+test.describe("Document API", () => {
+  test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
+  });
+
+  test("creates and reads html documents", async ({ page }) => {
+    await page.goto("/");
+
+    const result = await page.evaluate(async () => {
+      const id = crypto.randomUUID();
+      const content =
+        "<!doctype html><html><head><title>HTML Test</title></head><body><h1>Hello HTML</h1></body></html>";
+
+      const createResponse = await fetch(`/api/document?id=${id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: "HTML Test",
+          content,
+          kind: "html",
+        }),
+      });
+
+      const createPayload = await createResponse.json();
+
+      const readResponse = await fetch(`/api/document?id=${id}`);
+      const readPayload = await readResponse.json();
+
+      return {
+        createPayload,
+        createStatus: createResponse.status,
+        readPayload,
+        readStatus: readResponse.status,
+      };
+    });
+
+    expect(result.createStatus).toBe(200);
+    expect(result.createPayload.at(-1)?.kind).toBe("html");
+    expect(result.readStatus).toBe(200);
+    expect(result.readPayload.at(-1)?.kind).toBe("html");
+    expect(result.readPayload.at(-1)?.content).toContain("<h1>Hello HTML</h1>");
   });
 });

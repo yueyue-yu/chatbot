@@ -1,4 +1,4 @@
-import type { NextAuthConfig } from "next-auth";
+import NextAuth, { type NextAuthConfig } from "next-auth";
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -10,5 +10,11 @@ export const authConfig = {
     newUser: `${base}/`,
   },
   providers: [],
-  callbacks: {},
+  callbacks: {
+    authorized() {
+      return true;
+    },
+  },
 } satisfies NextAuthConfig;
+
+export const { auth: proxyAuth } = NextAuth(authConfig);

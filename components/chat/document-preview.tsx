@@ -47,7 +47,7 @@ export function DocumentPreview({
   args,
   interactive = true,
 }: DocumentPreviewProps) {
-  const { artifact, setArtifact } = useArtifact();
+  const { artifact, setArtifact, setMetadata } = useArtifact();
 
   const { data: documents, isLoading: isDocumentsFetching } = useSWR<
     Document[]
@@ -129,6 +129,7 @@ export function DocumentPreview({
           hitboxRef={hitboxRef}
           result={result}
           setArtifact={setArtifact}
+          setMetadata={setMetadata}
         />
       )}
       <DocumentHeader
@@ -166,16 +167,30 @@ const PureHitboxLayer = ({
   hitboxRef,
   result,
   setArtifact,
+  setMetadata,
 }: {
   hitboxRef: React.RefObject<HTMLDivElement>;
   result?: Partial<DocumentToolOutput>;
   setArtifact: (
     updaterFn: UIArtifact | ((currentArtifact: UIArtifact) => UIArtifact)
   ) => void;
+  setMetadata: (
+    updaterFn:
+      | { view: "source" }
+      | ((currentMetadata: { view?: "source" | "preview" } | null) => {
+          view: "source";
+        })
+  ) => void;
 }) => {
   const handleClick = useCallback(
     (event: MouseEvent<HTMLElement>) => {
       const boundingBox = event.currentTarget.getBoundingClientRect();
+
+      if (result?.kind === "html") {
+        setMetadata({
+          view: "source",
+        });
+      }
 
       setArtifact((artifact) => ({
         ...artifact,
@@ -191,7 +206,7 @@ const PureHitboxLayer = ({
         },
       }));
     },
-    [setArtifact, result]
+    [setArtifact, setMetadata, result]
   );
 
   return (
@@ -236,7 +251,7 @@ const PureDocumentHeader = ({
           </div>
         ) : kind === "image" ? (
           <ImageIcon size={14} />
-        ) : kind === "code" ? (
+        ) : kind === "code" || kind === "html" ? (
           <CodeIcon size={14} />
         ) : (
           <FileIcon size={14} />
@@ -259,6 +274,27 @@ const DocumentHeader = memo(PureDocumentHeader, (prevProps, nextProps) => {
   return true;
 });
 
+const HtmlArtifactCard = ({ title }: { title: string }) => {
+  return (
+    <div className="flex size-full flex-col justify-between bg-muted/40 p-5">
+      <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
+        <CodeIcon size={14} />
+        HTML Artifact
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-lg font-semibold tracking-tight text-foreground">
+          {title}
+        </div>
+        <div className="max-w-[28ch] text-sm leading-6 text-muted-foreground">
+          Open this artifact to inspect the source and switch to the rendered
+          preview after generation finishes.
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const DocumentContent = ({ document }: { document: Document }) => {
   const { artifact } = useArtifact();
 
@@ -266,7 +302,7 @@ const DocumentContent = ({ document }: { document: Document }) => {
     "h-[257px] overflow-hidden rounded-b-2xl border border-t-0 border-border/50 dark:bg-muted",
     {
       "p-4 sm:px-10 sm:py-10": document.kind === "text",
-      "p-0": document.kind === "code",
+      "p-0": document.kind === "code" || document.kind === "html",
     }
   );
 
@@ -291,6 +327,10 @@ const DocumentContent = ({ document }: { document: Document }) => {
             <CodeEditor {...commonProps} onSaveContent={handleSaveContent} />
           </div>
         </div>
+      ) : document.kind === "html" ? (
+        <div className="relative flex size-full flex-1">
+          <HtmlArtifactCard title={document.title} />
+        </div>
       ) : document.kind === "sheet" ? (
         <div className="relative flex size-full flex-1 p-4">
           <div className="absolute inset-0">
@@ -307,7 +347,9 @@ const DocumentContent = ({ document }: { document: Document }) => {
           title={document.title}
         />
       ) : null}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-muted to-transparent dark:from-muted" />
+      {document.kind !== "html" && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-muted to-transparent dark:from-muted" />
+      )}
       {document.kind === "code" && (
         <div className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-muted to-transparent dark:from-muted" />
       )}

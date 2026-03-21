@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { registerAndAuthenticate } from "../helpers";
 
 test.describe("Chat Page", () => {
+  test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
+  });
+
   test("home page loads with input field", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("multimodal-input")).toBeVisible();
@@ -15,7 +20,7 @@ test.describe("Chat Page", () => {
 
   test("submit button is visible", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByTestId("send-button")).toBeVisible();
+    await expect(page.getByTestId("send-button").first()).toBeVisible();
   });
 
   test("suggested actions are visible on empty chat", async ({ page }) => {
@@ -42,6 +47,10 @@ test.describe("Chat Page", () => {
 });
 
 test.describe("Chat Input Features", () => {
+  test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
+  });
+
   test("input clears after sending", async ({ page }) => {
     await page.goto("/");
     const input = page.getByTestId("multimodal-input");
@@ -54,7 +63,7 @@ test.describe("Chat Input Features", () => {
 
   test("input supports multiline text", async ({ page }) => {
     await page.goto("/");
-    const input = page.getByTestId("multimodal-input");
+    const input = page.getByTestId("multimodal-input").first();
     await input.fill("Line 1\nLine 2\nLine 3");
     await expect(input).toContainText("Line 1");
   });

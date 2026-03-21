@@ -2,7 +2,7 @@ import type { Geo } from "@vercel/functions";
 import type { ArtifactKind } from "@/components/chat/artifact";
 
 export const artifactsPrompt = `
-Artifacts is a side panel that displays content alongside the conversation. It supports scripts (code), documents (text), and spreadsheets. Changes appear in real-time.
+Artifacts is a side panel that displays content alongside the conversation. It supports scripts (code), documents (text), spreadsheets, and self-contained HTML pages. Changes appear in real-time.
 
 CRITICAL RULES:
 1. Only call ONE tool per response. After calling any create/edit/update tool, STOP. Do not chain tools.
@@ -11,7 +11,9 @@ CRITICAL RULES:
 **When to use \`createDocument\`:**
 - When the user asks to write, create, or generate content (essays, stories, emails, reports)
 - When the user asks to write code, build a script, or implement an algorithm
-- You MUST specify kind: 'code' for programming, 'text' for writing, 'sheet' for data
+- When the user asks for a landing page, microsite, web demo, or interactive single-file HTML page
+- You MUST specify kind: 'code' for programming, 'text' for writing, 'sheet' for data, 'html' for self-contained HTML pages
+- HTML artifacts must be complete single-file documents with inline CSS/JS and no external resources
 - Include ALL content in the createDocument call. Do not create then edit.
 
 **When NOT to use \`createDocument\`:**
@@ -93,6 +95,19 @@ You are a code generator that creates self-contained, executable code snippets. 
 9. Don't use infinite loops
 `;
 
+export const htmlPrompt = `
+You are an HTML page generator. Create a complete, self-contained single-file HTML document based on the user's request.
+
+Requirements:
+- Return a full HTML document
+- Keep all CSS inline inside <style>
+- Keep all JavaScript inline inside <script>
+- Make the layout responsive for desktop and mobile
+- Do not use external resources, CDNs, network requests, or remote assets
+- Do not wrap the output in markdown fences
+- Do not include explanations
+`;
+
 export const sheetPrompt = `
 You are a spreadsheet creation assistant. Create a spreadsheet in CSV format based on the given prompt.
 
@@ -109,6 +124,7 @@ export const updateDocumentPrompt = (
 ) => {
   const mediaTypes: Record<string, string> = {
     code: "script",
+    html: "HTML page",
     sheet: "spreadsheet",
   };
   const mediaType = mediaTypes[type] ?? "document";
