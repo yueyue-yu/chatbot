@@ -12,7 +12,6 @@
   <a href="#project-structure"><strong>Project Structure</strong></a> ·
   <a href="#features"><strong>Features</strong></a> ·
   <a href="#model-providers"><strong>Model Providers</strong></a> ·
-  <a href="#deploy-your-own"><strong>Deploy Your Own</strong></a> ·
   <a href="#running-locally"><strong>Running locally</strong></a>
 </p>
 <br/>
@@ -46,12 +45,6 @@ Capability flags are shared across the configured provider:
 - `OPENAI_COMPAT_SUPPORTS_REASONING`
 
 These flags control attachment support, tool availability, and reasoning UI behavior for all models entered in the selector.
-
-## Deploy Your Own
-
-You can deploy your own version of Chatbot to Vercel with one click:
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/templates/next.js/chatbot)
 
 ## Project Structure
 
