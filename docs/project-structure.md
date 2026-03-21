@@ -328,7 +328,7 @@ lib/db/
 
 ## 7. artifacts 目录
 
-这个目录定义 Artifact 类型的客户端/服务端实现。
+这个目录定义各类 Artifact 的类型实现，是聊天主链路里“富文档对象”的实现层。
 
 ```text
 artifacts/
@@ -339,20 +339,28 @@ artifacts/
 └── text/
 ```
 
-你可以理解为“聊天消息里生成出来的富文档对象”的类型注册层：
+这里最值得先知道的只有三件事：
 
-- `text/`
-  文本类 Artifact
-- `code/`
-  代码类 Artifact
-- `sheet/`
-  表格类 Artifact
-- `image/`
-  图片类 Artifact
+1. `artifacts/*/client.tsx`
+   定义该类型在前端如何展示、如何处理流式 delta、有哪些动作和工具栏。
+2. `artifacts/*/server.ts`
+   定义该类型在服务端如何创建和更新，并向前端发送什么 `data-*` 事件。
+3. Artifact 系统并不只在这个目录里完成。
+   真正的主链还会经过 `components/chat/artifact.tsx`、`components/chat/data-stream-handler.tsx`、`lib/artifacts/server.ts`、`lib/agent/tools/*`、`app/(chat)/api/document/route.ts`。
 
-如果需要更细的职责拆解、流式协议说明、各类型差异和扩展方式，可继续阅读：
+当前目录里的四种类型是：
 
-- `docs/artifacts.md`
+- `text`
+- `code`
+- `sheet`
+- `image`
+
+如果你需要更细的内容，请继续读：
+
+- [docs/artifacts.md](./artifacts.md)
+  Artifact 的定位、核心契约、流式协议、版本语义、扩展清单、已知坑点。
+- [docs/project-learning-path.md](./project-learning-path.md)
+  面向维护者/二开者的读码路线、实战练习和概念对照表。
 
 ## 8. tests 目录
 

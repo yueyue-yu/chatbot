@@ -1,484 +1,910 @@
-# `artifacts/` 目录梳理
+# Artifact 全生命周期深潜
 
-本文档用于说明仓库中 `artifacts/` 目录的定位、各子目录职责，以及它和 `components/chat/`、`lib/artifacts/`、`lib/ai/tools/` 之间的关系。
+本文档面向准备维护、扩展、二开这个项目的开发者。
+
+如果你只想先知道仓库大图，先看 [project-structure.md](./project-structure.md)。
+如果你想按步骤带着自己读源码，再看 [project-learning-path.md](./project-learning-path.md)。
 
 ---
 
-## 1. artifacts 是什么
+## 1. Artifact 到底是什么
 
-在这个项目里，Artifact 可以理解为：
+在这个项目里，Artifact 不是一条普通聊天消息，而是：
 
-> 聊天过程中由模型生成、并以“可编辑富内容面板”形式展示给用户的对象。
+> 模型在聊天过程中创建或修改的、以侧边面板形式展示的富内容文档对象。
 
-它不是普通聊天文本，而是带有独立类型、独立编辑器、独立版本历史、独立工具栏的一类文档实体。
+它有几个非常鲜明的特征：
 
-当前前端支持的 Artifact 类型有：
+- 有独立的 `kind`
+- 有自己的展示组件和交互动作
+- 有独立的流式更新协议
+- 会持久化到 `Document` 表
+- 支持版本历史
+- 可以通过 AI tool 继续编辑
 
-- `text`：文本文档
-- `code`：代码文档
-- `sheet`：表格/CSV 文档
-- `image`：图片文档
+当前前端支持四种 Artifact：
 
-其中真正接入到服务端文档处理注册表的类型是：
+- `text`
+- `code`
+- `sheet`
+- `image`
+
+但“支持显示”和“支持完整后端链路”不是一回事。当前真正接入服务端 Artifact handler 注册表的只有：
 
 - `text`
 - `code`
 - `sheet`
 
-`image` 目前只有前端展示定义，没有像其他三类一样接入 `lib/artifacts/server.ts` 的文档 handler 注册。
+`image` 目前只接了前端类型定义、预览和数据库枚举，没有接入 `lib/artifacts/server.ts` 的服务端 handler 注册，也不在 `createDocument` 的 kind 枚举里。
 
 ---
 
-## 2. 目录结构
+## 2. 先建立边界感：Artifact 相关的 4 层对象
 
-```text
-artifacts/
-├── actions.ts           # Artifact 共享 server action
-├── code/
-│   ├── client.tsx       # code 类型的前端定义
-│   └── server.ts        # code 类型的服务端生成/更新逻辑
-├── image/
-│   └── client.tsx       # image 类型的前端定义
-├── sheet/
-│   ├── client.tsx       # sheet 类型的前端定义
-│   └── server.ts        # sheet 类型的服务端生成/更新逻辑
-└── text/
-    ├── client.tsx       # text 类型的前端定义
-    └── server.ts        # text 类型的服务端生成/更新逻辑
+阅读这条链路时，最容易混淆的是“到底哪个对象才是 Artifact”。实际上这里至少有 4 层。
+
+| 层级 | 它是什么 | 典型来源 | 作用 |
+| --- | --- | --- | --- |
+| chat message | 聊天消息里的 `parts` | `useChat()`、`/api/chat` | 承载文本、reasoning、tool call、tool result |
+| tool output | `tool-createDocument` / `tool-updateDocument` 等输出 | `lib/agent/tools/*` | 告诉前端“创建/更新了哪个文档” |
+| document record | `Document` 表中的版本记录 | `saveDocument()` / `updateDocumentContent()` | 真正持久化 Artifact 内容 |
+| UI artifact state | 当前侧边面板显示状态 | `hooks/use-artifact.ts` | 控制当前打开了哪个文档、显示什么内容、是否展开 |
+
+可以把它们理解成：
+
+1. 聊天消息里出现“某个 Artifact 被创建/更新了”
+2. 前端根据 tool 结果和流事件打开侧边面板
+3. 面板内部再去拉 `Document` 历史版本
+4. 用户继续编辑或让模型继续修改这个 Artifact
+
+---
+
+## 3. 核心契约：这条链路里的关键类型
+
+这一节是二开时最重要的“事实上的公共契约”。
+
+## 3.1 `Artifact` 配置模型
+
+文件：`components/chat/create-artifact.tsx`
+
+这里定义了 Artifact 类型系统的统一配置类。每一种 Artifact 本质上都是：
+
+```ts
+new Artifact({
+  kind,
+  description,
+  content,
+  actions,
+  toolbar,
+  initialize,
+  onStreamPart,
+});
 ```
 
-一个很重要的理解方式是：
-
-- `artifacts/*/client.tsx`
-  负责“这个 Artifact 在前端如何展示、如何响应流式数据、有哪些按钮和快捷操作”
-- `artifacts/*/server.ts`
-  负责“这个 Artifact 在服务端如何由模型创建、如何更新、往前端流式发送什么数据”
-- `artifacts/actions.ts`
-  放各类 Artifact 可能共享的服务端动作
-
----
-
-## 3. 它在整体架构里的位置
-
-Artifact 能力不是单靠 `artifacts/` 目录独立完成的，而是由几层协作完成：
-
-### 3.1 `artifacts/`
-定义每种 Artifact 的“类型实现”。
-
-### 3.2 `components/chat/create-artifact.tsx`
-定义 `Artifact` 类，是各类型 Artifact 的统一配置模型。一个 Artifact 需要提供：
+各字段职责：
 
 - `kind`
+  类型标识，例如 `text`、`code`
 - `description`
+  给模型和 UI 使用的类型说明
 - `content`
+  该类型在侧边面板中的主内容组件
 - `actions`
+  面板右侧纵向动作按钮，例如复制、运行、切版本
 - `toolbar`
+  悬浮工具栏里的快捷消息动作
 - `initialize`
+  当一个已有文档被打开时执行的初始化逻辑，通常用来加载 metadata
 - `onStreamPart`
+  当服务端流式推来 `data-*` 片段时，如何更新当前 Artifact 面板
 
-也就是说，`artifacts/text/client.tsx` 这类文件，本质上是在实例化这个配置类。
+理解重点：
 
-### 3.3 `components/chat/artifact.tsx`
-这是 Artifact 面板的统一宿主组件：
+- `artifacts/*/client.tsx` 不是普通 React 组件集合
+- 它们是在“实例化一种 Artifact 类型”
 
-- 注册所有前端 Artifact 定义
-- 根据 `kind` 找到对应实现
-- 拉取文档版本
-- 处理保存、切换版本、diff 模式
-- 渲染实际的编辑器内容
+## 3.2 `ArtifactKind` 与 `UIArtifact`
 
-这里的注册表是：
+文件：`components/chat/artifact.tsx`
+
+前端通过 `artifactDefinitions` 注册所有类型：
 
 - `textArtifact`
 - `codeArtifact`
 - `imageArtifact`
 - `sheetArtifact`
 
-### 3.4 `components/chat/data-stream-handler.tsx`
-负责消费服务端发来的流式数据片段，并把这些片段分发给当前 Artifact：
+然后用这个注册表派生：
 
-- 通用片段：`data-id`、`data-title`、`data-kind`、`data-clear`、`data-finish`
-- 类型专属片段：如 `data-textDelta`、`data-codeDelta`、`data-sheetDelta`、`data-imageDelta`、`data-suggestion`
+- `ArtifactKind`
+  当前前端认可的所有 kind 联合类型
+- `UIArtifact`
+  当前侧边面板本地状态
 
-### 3.5 `lib/artifacts/server.ts`
-这是服务端 Artifact 文档处理注册中心，主要做两件事：
+`UIArtifact` 关注的是“当前打开的是什么”，而不是数据库里的完整历史：
 
-1. 通过 `createDocumentHandler()` 封装“生成/更新后保存文档”的通用逻辑
-2. 维护 `documentHandlersByArtifactKind` 注册表
+- `title`
+- `documentId`
+- `kind`
+- `content`
+- `isVisible`
+- `status`
+- `boundingBox`
 
-当前服务端注册了：
+`boundingBox` 主要服务于移动端/卡片点击后的展开动画。
 
-- `textDocumentHandler`
-- `codeDocumentHandler`
-- `sheetDocumentHandler`
+## 3.3 `CustomUIDataTypes`
 
-并导出：
+文件：`lib/types.ts`
 
-- `artifactKinds = ["text", "code", "sheet"]`
+这是服务端流向前端的 UI 数据协议。Artifact 相关的关键事件包括：
 
-### 3.6 `lib/ai/tools/*`
-AI 工具层会调用 Artifact handler：
+- `textDelta`
+- `codeDelta`
+- `sheetDelta`
+- `imageDelta`
+- `suggestion`
+- `id`
+- `title`
+- `kind`
+- `clear`
+- `finish`
 
-- `create-document.ts`：创建新 Artifact
-- `update-document.ts`：大范围重写 Artifact
-- `edit-document.ts`：精确替换内容
-- `request-suggestions.ts`：给 text Artifact 生成建议
+对应到真实流事件名就是：
 
----
+- `data-textDelta`
+- `data-codeDelta`
+- `data-sheetDelta`
+- `data-imageDelta`
+- `data-suggestion`
+- `data-id`
+- `data-title`
+- `data-kind`
+- `data-clear`
+- `data-finish`
 
-## 4. 通用工作流
+这层协议非常关键。新增一种 Artifact 时，如果要有新的流片段类型，不能只写前端组件，还要同步扩展这里。
 
-一个 Artifact 从“用户提出需求”到“面板里可编辑”，大致会经过下面这条链路。
+## 3.4 `DocumentHandler`
 
-### 4.1 创建流程
+文件：`lib/artifacts/server.ts`
 
-1. 用户在聊天中提出需求
-2. 模型调用 `createDocument` 工具
-3. `lib/ai/tools/create-document.ts`：
-   - 生成 `id`
-   - 向前端发送 `data-kind` / `data-id` / `data-title` / `data-clear`
-   - 根据 `kind` 找到对应 `documentHandler`
-4. 具体 handler（如 `artifacts/text/server.ts`）开始调用模型流式生成内容
-5. handler 持续发送类型专属 delta：
-   - text → `data-textDelta`
-   - code → `data-codeDelta`
-   - sheet → `data-sheetDelta`
-6. `components/chat/data-stream-handler.tsx` 接收这些流片段
-7. 对应的 `artifacts/*/client.tsx` 通过 `onStreamPart` 更新当前 Artifact 面板内容
-8. 生成完成后发送 `data-finish`
-9. `lib/artifacts/server.ts` 在服务端把最终内容保存到数据库
-
-### 4.2 更新流程
-
-更新主要有两种：
-
-#### A. 全量重写
-通过 `updateDocument` 工具触发：
-
-- 先查已有文档
-- 找到对应 kind 的 handler
-- 重新流式生成完整内容
-- 保存为新版本
-
-#### B. 精确编辑
-通过 `editDocument` 工具触发：
-
-- 查文档内容
-- 用 `old_string -> new_string` 做精确替换
-- 直接写回数据库
-- 再通过 `data-codeDelta` / `data-sheetDelta` / `data-textDelta` 把最新内容推回前端
-
-### 4.3 建议流程（仅 text）
-
-`text` Artifact 额外支持建议：
-
-1. `textArtifact.initialize()` 调用 `artifacts/actions.ts` 中的 `getSuggestions`
-2. 从数据库拉取当前文档已有建议
-3. `requestSuggestions` 工具流式返回 `data-suggestion`
-4. `artifacts/text/client.tsx` 将建议写入 metadata
-5. `Editor` 组件显示建议高亮和修改意见
-
----
-
-## 5. 每个文件的作用
-
-## 5.1 `artifacts/actions.ts`
+服务端每种 Artifact 都通过 `DocumentHandler` 接入统一注册：
 
 ```ts
-export async function getSuggestions({ documentId }: { documentId: string })
+type DocumentHandler = {
+  kind: T;
+  onCreateDocument: (...) => Promise<void>;
+  onUpdateDocument: (...) => Promise<void>;
+};
 ```
 
-作用：
+`createDocumentHandler()` 做了两件通用工作：
 
-- 给 text Artifact 提供服务端查询能力
-- 根据 `documentId` 拉取数据库里的 suggestions
-- 供 `text/client.tsx` 初始化 metadata 时使用
+1. 调用具体类型自己的创建/更新实现，拿到最终完整内容
+2. 在成功后统一写入 `Document` 表
 
-这个文件目前主要服务于文本文档，不是所有 Artifact 通用都会用到。
+这意味着：
+
+- 各类型只负责“怎么生成内容”
+- 保存版本这件事被统一封装在 `lib/artifacts/server.ts`
+
+## 3.5 `Document` 与 `Suggestion`
+
+文件：`lib/db/schema.ts`
+
+`Document` 表不是“每个文档一行”，而是“每个版本一行”。
+
+关键点：
+
+- 主键是 `(id, createdAt)`
+- 同一个 Artifact 的多个版本共享同一个 `id`
+- 新版本靠新的 `createdAt` 区分
+
+因此，“当前文档”其实是：
+
+- 按 `id` 查询所有版本
+- 按 `createdAt` 排序
+- 取最新的一条
+
+`Suggestion` 不是只绑定到 `documentId`，而是绑定到：
+
+- `documentId`
+- `documentCreatedAt`
+
+这代表 suggestion 实际上依附的是“某个文档版本”，而不是抽象的文档名义 ID。
 
 ---
 
-## 5.2 `artifacts/text/`
+## 4. Artifact 在整体架构里的位置
 
-### `artifacts/text/client.tsx`
+如果只看 `artifacts/` 目录，会误以为 Artifact 能力都在这里。实际上它横跨了前后端多层。
 
-作用：定义文本文档在前端的行为。
+| 层 | 关键文件 | 责任 |
+| --- | --- | --- |
+| 页面与聊天入口 | `app/(chat)/api/chat/route.ts` | 接请求、组装 agent、返回流 |
+| Agent / tools | `lib/agent/agent.ts`、`lib/agent/tools/*` | 选择调用哪个 Artifact 工具 |
+| 服务端 handler 注册 | `lib/artifacts/server.ts` | 按 kind 找到生成/更新逻辑并统一保存 |
+| 类型实现 | `artifacts/*/server.ts`、`artifacts/*/client.tsx` | 每种 Artifact 的服务端生成逻辑和前端展示逻辑 |
+| 流式消费 | `components/chat/data-stream-handler.tsx` | 消费 `data-*` 事件并写入本地面板状态 |
+| 面板宿主 | `components/chat/artifact.tsx` | 统一渲染侧边面板、拉版本、切版本、保存手工编辑 |
+| 持久化 | `app/(chat)/api/document/route.ts`、`lib/db/queries.ts` | 文档读取、手工保存、版本删除 |
 
-核心职责：
+建议建立一个心智模型：
 
-- `kind: "text"`
-- 初始化时加载 suggestions
-- 接收 `data-textDelta` 追加正文内容
-- 接收 `data-suggestion` 追加建议列表
-- 用 `Editor` 渲染正文
-- 支持 diff 模式查看版本差异
-- 支持复制、前后版本切换、查看修改
-- 工具栏支持：
-  - `Add final polish`
-  - `Request suggestions`
+> `artifacts/` 目录定义“这个类型是什么”，而不是独立完成“Artifact 系统”。
 
-它是四类 Artifact 里功能最完整的一类，因为既支持编辑，又支持版本 diff，又支持 suggestion 体系。
+---
 
-### `artifacts/text/server.ts`
+## 5. 一条完整时序：Artifact 怎么流起来
 
-作用：定义文本文档在服务端如何生成与更新。
+下面以“用户让模型创建一个文档/代码/表格 Artifact”为例。
 
-核心逻辑：
+## 5.1 从聊天请求进入 agent
 
-- `onCreateDocument`
-  - 用 `streamText()` 根据标题/主题生成文档
-  - system prompt 允许 Markdown、鼓励使用标题
-  - 流式发送 `data-textDelta`
-- `onUpdateDocument`
-  - 基于旧内容和修改描述进行全文更新
-  - 同样流式发送 `data-textDelta`
+入口文件：`app/(chat)/api/chat/route.ts`
+
+关键链路：
+
+1. 前端 `useChat()` 发送用户消息到 `/api/chat`
+2. `route.ts` 创建 `ToolLoopAgent`
+3. `createChatAgent()` 给 agent 注册 4 个 Artifact 相关工具：
+   - `createDocument`
+   - `editDocument`
+   - `updateDocument`
+   - `requestSuggestions`
+4. 模型根据 system prompt 决定是否调工具
+
+Artifact 能力并不是前端自己“猜”出来的，而是模型真正调用 tool 触发的。
+
+## 5.2 `createDocument` 工具先发通用事件，再交给具体类型
+
+文件：`lib/agent/tools/create-document.ts`
+
+创建时，工具会先生成一个新的 `id`，然后依次向 UI 数据流写入：
+
+1. `data-kind`
+2. `data-id`
+3. `data-title`
+4. `data-clear`
+
+这四个事件让前端知道：
+
+- 将要打开的是什么类型
+- 这个文档的 ID 是什么
+- 面板标题是什么
+- 先把旧内容清空
+
+然后工具再根据 `kind` 去 `documentHandlersByArtifactKind` 里找具体 handler。
+
+## 5.3 具体 handler 负责流式产出内容
+
+文件：
+
+- `artifacts/text/server.ts`
+- `artifacts/code/server.ts`
+- `artifacts/sheet/server.ts`
+
+不同类型产出的流片段不同：
+
+| kind | 服务端流事件 | 客户端更新方式 |
+| --- | --- | --- |
+| `text` | `data-textDelta` | 把增量追加到已有内容 |
+| `code` | `data-codeDelta` | 用当前完整代码覆盖面板内容 |
+| `sheet` | `data-sheetDelta` | 用当前完整 CSV 覆盖面板内容 |
+
+其中最值得注意的差异：
+
+- `text` handler 每次发送的是“新增长的一小段”
+- `code` / `sheet` handler 每次发送的是“截至当前的完整草稿”
+
+这就是为什么三个前端 `onStreamPart` 实现长得不一样。
+
+## 5.4 `DataStreamHandler` 把服务端事件写进本地 Artifact 状态
+
+文件：`components/chat/data-stream-handler.tsx`
+
+它处理两类事情：
+
+### A. 通用事件
+
+由统一 switch 处理：
+
+- `data-id`
+- `data-title`
+- `data-kind`
+- `data-clear`
+- `data-finish`
+
+### B. 类型专属事件
+
+交给当前 Artifact 的 `onStreamPart`：
+
+- `textArtifact.onStreamPart`
+- `codeArtifact.onStreamPart`
+- `sheetArtifact.onStreamPart`
+- `imageArtifact.onStreamPart`
+
+每种类型自己决定：
+
+- 如何更新 `artifact.content`
+- 何时自动把面板设为可见
+- 是否需要同步 metadata
+
+## 5.5 `Artifact` 面板宿主负责展示、拉版本、保存
+
+文件：`components/chat/artifact.tsx`
+
+宿主组件做的事情比名字看起来多很多：
+
+- 根据 `artifact.kind` 找到对应类型定义
+- 通过 `/api/document?id=...` 拉这个文档的所有版本
+- 维护 `edit` / `diff` 模式
+- 维护当前版本索引
+- 渲染具体的 `artifactDefinition.content`
+- 把 `onSaveContent` 传给编辑器
+- 在右侧挂载该类型的 `actions`
+- 在底部挂载通用版本切换区
+
+它不是“某一种 Artifact 的组件”，而是整个 Artifact 子系统的统一宿主。
+
+## 5.6 创建完成后统一保存到数据库
+
+文件：`lib/artifacts/server.ts`
+
+无论是 `onCreateDocument` 还是 `onUpdateDocument`，最终都会：
+
+1. 等待具体类型返回完整草稿字符串
+2. 调用 `saveDocument()`
+3. 以新的 `createdAt` 写入 `Document` 表
+
+最后 tool 再发送：
+
+- `data-finish`
+
+前端收到后把 `artifact.status` 设回 `idle`。
+
+---
+
+## 6. 文档版本与保存语义
+
+这是理解 Artifact 的核心之一，因为“更新内容”在这个项目里并不总是同一种写法。
+
+## 6.1 版本是怎么定义的
+
+同一个 Artifact 的多个版本：
+
+- `Document.id` 相同
+- `Document.createdAt` 不同
+
+因此：
+
+- `getDocumentsById({ id })` 会返回同一个文档的所有版本
+- `getDocumentById({ id })` 会返回最新版本
+- UI 中的版本切换，本质上是在切同一个 `id` 的不同 `createdAt`
+
+## 6.2 四种改动路径的保存行为
+
+| 路径 | 入口 | 保存方式 | 是否新增版本 |
+| --- | --- | --- | --- |
+| create | `createDocument` | `saveDocument()` | 是 |
+| full rewrite | `updateDocument` | `saveDocument()` | 是 |
+| exact replace | `editDocument` | `saveDocument()` | 是 |
+| manual edit | `/api/document` + `isManualEdit: true` | `updateDocumentContent()` | 否，原地更新最新版本 |
+
+## 6.3 逐条说明
+
+### A. create
+
+`createDocument` 会生成新 `documentId`，然后由 handler 生成初稿并保存。
+
+结果：
+
+- 新建一个 Artifact
+- `Document` 表新增一行
+
+### B. full rewrite
+
+`updateDocument` 会先读取已有文档，再调用对应 handler 生成完整新内容。
+
+结果：
+
+- 复用原来的 `document.id`
+- 新增一条更晚的 `createdAt`
+- 形成一个新版本
+
+### C. exact replace
+
+`editDocument` 会对最新版本做精确字符串替换，然后再次 `saveDocument()`。
+
+结果：
+
+- 同样复用原来的 `document.id`
+- 也会形成一个新版本
+
+### D. manual edit
+
+手工编辑来自侧边面板内的编辑器保存，入口是：
+
+- `components/chat/artifact.tsx` 的 `saveContent()`
+- `POST /api/document?id=...`
+
+当请求体里有 `isManualEdit: true` 时，`app/(chat)/api/document/route.ts` 会调用：
+
+- `updateDocumentContent({ id, content })`
+
+这里不是插入新行，而是：
+
+1. 找到这个 `id` 的最新版本
+2. 直接更新那一条记录的 `content`
+
+结果：
+
+- 不会新增版本
+- 当前最新版本被原地改写
+
+这个差异很重要。不要把“面板里敲字保存”和“让 agent 改文档”混为一谈。
+
+## 6.4 建议系统和版本的关系
+
+`Suggestion` 通过 `(documentId, documentCreatedAt)` 指向某个具体版本。
+
+这意味着：
+
+- suggestion 概念上是版本相关的
+- 但当前 `getSuggestionsByDocumentId()` 查询只按 `documentId` 取，不按版本过滤
+
+文档里应该把这视为“当前实现现状”，不要脑补成严格的版本隔离建议系统。
+
+---
+
+## 7. 四类 Artifact 对比
+
+## 7.1 对比总表
+
+| kind | 客户端定义 | 服务端 handler | 流片段 | metadata | 代表能力 |
+| --- | --- | --- | --- | --- | --- |
+| `text` | `artifacts/text/client.tsx` | 有 | `data-textDelta` | `suggestions` | 富文本编辑、diff、建议 |
+| `code` | `artifacts/code/client.tsx` | 有 | `data-codeDelta` | `outputs` | 代码编辑、Pyodide 运行、控制台输出 |
+| `sheet` | `artifacts/sheet/client.tsx` | 有 | `data-sheetDelta` | 空对象 | 表格编辑、CSV 复制、数据操作快捷消息 |
+| `image` | `artifacts/image/client.tsx` | 无 | `data-imageDelta` | 无 | 图片展示、复制图片 |
+
+## 7.2 `text`
 
 特点：
 
-- 使用 `smoothStream({ chunking: "word" })`，让文本流更平滑
-- 客户端是“增量拼接”模式：每次只把新 delta 追加到已有内容
+- 流式协议是“追加文本”
+- `initialize()` 会通过 `artifacts/actions.ts` 读取已有 suggestion
+- `requestSuggestions` 工具还会继续流式推送 `data-suggestion`
+- 支持 `diff` 模式查看版本差异
+- 是四类中功能最完整的一种
 
----
+适合重点阅读的文件：
 
-## 5.3 `artifacts/code/`
+- `artifacts/text/client.tsx`
+- `artifacts/text/server.ts`
+- `components/chat/text-editor.tsx`
+- `lib/agent/tools/request-suggestions.ts`
+- `lib/editor/suggestions.tsx`
 
-### `artifacts/code/client.tsx`
-
-作用：定义代码 Artifact 在前端的展示和交互。
-
-核心职责：
-
-- `kind: "code"`
-- 接收 `data-codeDelta` 更新代码内容
-- 用 `CodeEditor` 渲染代码
-- 支持复制代码、版本切换
-- 支持工具栏快捷指令：
-  - 添加注释
-  - 添加日志
-- 额外支持“运行代码”
-
-最有特点的是 `Run` 动作：
-
-- 使用浏览器中的 `Pyodide`
-- 目前仅支持 Python 执行
-- 捕获 stdout 输出到 `Console`
-- 自动识别 `matplotlib` / `plt.`，为图像输出补装处理逻辑
-- 若绘图，能把图片以 `data:image/png;base64,...` 的形式输出到控制台面板
-
-因此，code Artifact 不只是代码展示器，还是一个轻量的 Python 运行环境。
-
-### `artifacts/code/server.ts`
-
-作用：定义代码文档在服务端如何生成与更新。
-
-核心逻辑：
-
-- `onCreateDocument`
-  - 调用模型生成代码
-  - 强制模型只输出代码本体，不要解释、不加 markdown fence
-- `onUpdateDocument`
-  - 基于旧代码和修改描述输出完整新代码
-- 流式发送 `data-codeDelta`
-
-额外细节：
-
-- 用 `stripFences()` 去掉模型可能输出的 ``` 包裹
-- 客户端接收到的是“完整当前代码快照”，而不是单个 token 追加后的局部文本
-
----
-
-## 5.4 `artifacts/sheet/`
-
-### `artifacts/sheet/client.tsx`
-
-作用：定义表格 Artifact 的前端行为。
-
-核心职责：
-
-- `kind: "sheet"`
-- 接收 `data-sheetDelta`
-- 用 `SpreadsheetEditor` 渲染 CSV 内容
-- 支持复制为 `.csv`
-- 支持版本切换
-- 提供两类工具栏动作：
-  - 清洗/格式化数据
-  - 分析并可视化数据（要求创建新的 code Artifact）
-
-这里的 sheet 本质上是“CSV 驱动的表格编辑器”。
-
-### `artifacts/sheet/server.ts`
-
-作用：定义表格文档在服务端如何生成与更新。
-
-核心逻辑：
-
-- `onCreateDocument`
-  - 调用模型生成 CSV 原始数据
-  - system prompt 明确要求“只输出 raw CSV data”
-- `onUpdateDocument`
-  - 基于旧 CSV 和修改描述生成新的 CSV
-- 流式发送 `data-sheetDelta`
+## 7.3 `code`
 
 特点：
 
-- 客户端拿到的是当前完整 CSV 内容
-- 和 code 类似，也更接近“完整快照覆盖”模式
+- 服务端发送的是“当前完整代码草稿”
+- 客户端每次直接覆盖 `artifact.content`
+- metadata 里维护 `outputs`
+- `Run` 动作会在浏览器里通过 Pyodide 执行 Python
+- 悬浮工具栏支持“Add comments”“Add logs”
+
+适合重点阅读的文件：
+
+- `artifacts/code/client.tsx`
+- `artifacts/code/server.ts`
+- `components/chat/code-editor.tsx`
+- `components/chat/console.tsx`
+
+## 7.4 `sheet`
+
+特点：
+
+- 本质上是 CSV 文本
+- 服务端同样发送完整草稿
+- 客户端使用 `SpreadsheetEditor`
+- 工具栏更偏“继续向模型发消息”，例如清洗数据、分析并创建新的 code Artifact
+
+适合重点阅读的文件：
+
+- `artifacts/sheet/client.tsx`
+- `artifacts/sheet/server.ts`
+- `components/chat/sheet-editor.tsx`
+
+## 7.5 `image`
+
+特点：
+
+- 前端有 Artifact 类型定义
+- `Document` schema 允许 `kind: "image"`
+- 预览组件、骨架屏、复制动作都已接入
+
+但它目前不是一条完整链路，因为：
+
+- `lib/artifacts/server.ts` 没有 `imageDocumentHandler`
+- `artifactKinds` 不包含 `image`
+- `createDocument` 不能创建 `image`
+- 仓库里没有 `artifacts/image/server.ts`
+- `editDocument` 对 `image` 也没有单独分支，默认会走 text delta 分支
+
+因此，当前更准确的说法是：
+
+> `image` 是前端已留口、后端未完整接通的 Artifact 类型。
 
 ---
 
-## 5.5 `artifacts/image/`
+## 8. metadata、动作与工具栏是怎么分层的
 
-### `artifacts/image/client.tsx`
+这部分很适合二开时参考。
 
-作用：定义图片 Artifact 在前端的展示行为。
+## 8.1 metadata
 
-核心职责：
+文件：`hooks/use-artifact.ts`
 
-- `kind: "image"`
-- 接收 `data-imageDelta`
-- 用 `ImageEditor` 渲染图片
-- 支持复制图片到剪贴板
-- 支持版本切换
+Artifact metadata 不是存在 `UIArtifact` 里，而是单独走了另一份 SWR 状态：
 
-### 当前状态说明
+- key 规则：`artifact-metadata-${artifact.documentId}`
 
-和 `text` / `code` / `sheet` 相比，`image` 目前是“前端可识别类型”，但不是完整接入的服务端文档类型：
+这意味着：
 
-- `lib/artifacts/server.ts` 没有注册 `imageDocumentHandler`
-- `artifactKinds` 里也没有 `image`
-- `createDocument` 工具不能直接创建 `image` Artifact
-- 仓库内也没有对应的 `artifacts/image/server.ts`
+- metadata 是按 `documentId` 分桶缓存的
+- 切换到不同文档时，metadata 也会跟着切桶
+- 常见用法是保存“不是正文内容，但和该 Artifact 强相关的前端状态”
 
-因此目前更合理的理解是：
+当前已有例子：
 
-> `image` 已经具备 UI 容器能力，但尚未完成和服务端文档创建/更新链路的统一接入。
+- `text`：`suggestions`
+- `code`：`outputs`
 
----
+## 8.2 `actions`
 
-## 6. 四类 Artifact 的差异对比
+文件：
 
-| 类型 | 前端文件 | 服务端文件 | 是否接入文档 handler | 内容形式 | 特色能力 |
-|---|---|---|---|---|---|
-| text | `artifacts/text/client.tsx` | `artifacts/text/server.ts` | 是 | Markdown/普通文本 | suggestions、diff、编辑 |
-| code | `artifacts/code/client.tsx` | `artifacts/code/server.ts` | 是 | 代码文本 | Pyodide 执行、控制台输出 |
-| sheet | `artifacts/sheet/client.tsx` | `artifacts/sheet/server.ts` | 是 | CSV | 表格编辑、复制 CSV |
-| image | `artifacts/image/client.tsx` | 无 | 否 | base64 图片 | 图片展示、复制图片 |
+- `components/chat/artifact-actions.tsx`
+- `components/chat/create-artifact.tsx`
 
----
+`actions` 是面板右侧竖着的一列按钮，典型能力包括：
 
-## 7. 为什么要把 artifacts 单独做成一个目录
+- 复制
+- 前后版本切换
+- 切到 diff 模式
+- 运行代码
 
-这样拆分有几个明显好处：
+这些动作直接拿到当前 Artifact 内容、版本信息、metadata。
 
-### 7.1 按类型隔离复杂度
+## 8.3 `toolbar`
 
-不同 Artifact 的交互差异非常大：
+文件：`components/chat/toolbar.tsx`
 
-- 文本要 suggestions 和 diff
-- 代码要运行和 console
-- 表格要 CSV 解析和清洗
-- 图片要剪贴板复制
+`toolbar` 更像“继续和模型协作”的快捷入口。它做的不是本地 UI 操作，而是调用 `sendMessage()`，让模型再继续工作。
 
-如果都写在一个文件里，复杂度会迅速失控。
+例如：
 
-### 7.2 前后端逻辑天然成对
+- text: Add final polish
+- text: Request suggestions
+- code: Add comments
+- code: Add logs
+- sheet: Format and clean data
+- sheet: Analyze and visualize data
 
-每种 Artifact 通常都有两类实现：
+额外注意：
 
-- 客户端渲染 / 动作 / 流数据处理
-- 服务端生成 / 更新 / 输出协议
-
-按 `kind` 聚合在一个目录下，阅读和扩展都更直观。
-
-### 7.3 方便新增类型
-
-如果未来要新增 `slides`、`diagram`、`html` 等 Artifact，通常只需要沿着同一模式补齐：
-
-1. `artifacts/new-kind/client.tsx`
-2. `artifacts/new-kind/server.ts`
-3. 在 `components/chat/artifact.tsx` 注册前端定义
-4. 在 `lib/artifacts/server.ts` 注册服务端 handler
-5. 让工具层允许创建该 kind
+- 如果 code Artifact 的控制台输出里出现错误，`Toolbar` 会插入一个动态的 `Fix error` 工具
+- 这个工具实际还是通过发消息，提示模型用 `updateDocument` 改现有脚本
 
 ---
 
-## 8. 新增一个 Artifact 时通常要改哪些地方
+## 9. 聊天消息是如何打开 Artifact 面板的
 
-以新增 `diagram` 为例，最少需要关注这些位置：
+除了侧边面板本身，聊天区域里还有两类与 Artifact 强相关的组件。
 
-### 前端
+## 9.1 `DocumentPreview`
+
+文件：`components/chat/document-preview.tsx`
+
+这是消息气泡里看到的 Artifact 卡片预览。
+
+它负责：
+
+- 展示 tool 输出对应的卡片
+- 流式创建中显示 skeleton
+- 点击卡片后把 `documentId`、`title`、`kind` 写进 `UIArtifact`
+- 用 `boundingBox` 记录点击区域，服务于展开动画
+
+## 9.2 `DocumentToolResult`
+
+文件：`components/chat/document.tsx`
+
+`requestSuggestions` 这种场景不展示整张预览卡，而是展示一枚更轻量的结果按钮。
+
+点击后同样会：
+
+- 写入 `documentId`
+- 打开 Artifact 面板
+
+## 9.3 `message.tsx`
+
+文件：`components/chat/message.tsx`
+
+这里负责把 assistant 消息里的 tool parts 渲染成不同的 UI：
+
+- `tool-createDocument` -> `DocumentPreview`
+- `tool-editDocument` -> `DocumentPreview`
+- `tool-updateDocument` -> `DocumentPreview`
+- `tool-requestSuggestions` -> `DocumentToolResult`
+
+因此，Artifact 不只是“侧边栏一个区域”，它和消息渲染层是联动的。
+
+---
+
+## 10. 新增一种 Artifact 时，真实需要改哪些地方
+
+这一节按“最容易漏掉的真实改动点”来列，不按目录树表面来列。
+
+假设我们要新增 `diagram`。
+
+## 10.1 前端类型定义与注册
+
+至少要改：
 
 - `artifacts/diagram/client.tsx`
-  - 定义 `new Artifact({...})`
+  定义 `new Artifact({...})`
 - `components/chat/artifact.tsx`
-  - 把 `diagramArtifact` 加入 `artifactDefinitions`
-- `components/chat/data-stream-handler.tsx`
-  - 一般不用专门改，只要沿用现有流分发机制即可
+  把 `diagramArtifact` 加入 `artifactDefinitions`
 
-### 服务端
+这一步会影响：
+
+- `ArtifactKind`
+- `UIArtifact.kind`
+- Artifact 宿主按 kind 找实现
+
+## 10.2 流事件类型
+
+至少要改：
+
+- `lib/types.ts`
+
+你要决定是否新增：
+
+- `diagramDelta`
+
+如果新增，就要同步保证服务端写 `data-diagramDelta`，前端 `onStreamPart` 也认这个事件。
+
+## 10.3 服务端 handler 注册
+
+至少要改：
 
 - `artifacts/diagram/server.ts`
-  - 实现 `createDocumentHandler`
 - `lib/artifacts/server.ts`
-  - 注册 `diagramDocumentHandler`
-  - 扩充 `artifactKinds`
 
-### 工具层
+具体包括：
 
-- `lib/ai/tools/create-document.ts`
-  - 允许模型选择新的 kind
-- 如有必要，补充：
-  - `update-document.ts`
-  - `edit-document.ts`
-  - 类型专属工具
+- 写 `diagramDocumentHandler`
+- 加入 `documentHandlersByArtifactKind`
+- 把 `diagram` 加进 `artifactKinds`
 
-### 数据与协议
+否则：
 
-- 确定新的流式事件类型，如 `data-diagramDelta`
-- 在客户端 `onStreamPart` 中消费它
+- `createDocument` 无法创建它
+- `updateDocument` 无法重写它
 
----
+## 10.4 tool 与流协议适配
 
-## 9. 可以记住的核心结论
+至少要确认这些地方是否需要分支：
 
-如果只记三件事，可以记下面这三个结论：
+- `lib/agent/tools/create-document.ts`
+- `lib/agent/tools/update-document.ts`
+- `lib/agent/tools/edit-document.ts`
 
-### 结论 1
-`artifacts/` 不是单纯的“静态模板目录”，而是 Artifact 类型实现层。
+尤其是 `editDocument`。它当前只对：
 
-### 结论 2
-每个 `client.tsx` 负责前端交互，每个 `server.ts` 负责服务端生成/更新；二者通过流式数据协议衔接。
-
-### 结论 3
-当前真正完整跑通的服务端 Artifact 类型是：
-
-- `text`
 - `code`
 - `sheet`
 
-而 `image` 目前更像是一个已准备好的前端容器，尚未完全接入统一文档生成链路。
+做了专门 delta 分支，其他类型默认走 `data-textDelta`。
+
+如果新类型不能复用 text delta，就必须补一个明确分支。
+
+## 10.5 面板内容与预览内容
+
+至少要改：
+
+- `components/chat/document-preview.tsx`
+  内联预览分支
+- `components/chat/document-skeleton.tsx`
+  skeleton 分支
+
+否则即使主面板能渲染，消息里的卡片预览也可能不对。
+
+## 10.6 文档接口与数据库
+
+至少要改：
+
+- `app/(chat)/api/document/route.ts`
+  `kind` 校验 schema
+- `lib/db/schema.ts`
+  `Document.kind` 枚举
+- `lib/db/migrations/*`
+  对应 migration
+
+这一步经常被忽略。当前 `image` 之所以能通过文档接口和 schema，是因为数据库和接口枚举都已经允许它，但后端 handler 链路没补完。
+
+## 10.7 学习型结论
+
+新增一种 Artifact 不是只加一个 `artifacts/new-kind/client.tsx`。
+
+至少要沿着这条线检查一遍：
+
+1. 前端类型定义
+2. 前端注册
+3. 流类型
+4. 服务端 handler
+5. tool 分发
+6. 预览分支
+7. skeleton
+8. API schema
+9. DB schema / migration
 
 ---
 
-## 10. 相关阅读
+## 11. 已知限制与容易踩坑的地方
 
-建议结合以下文件一起看：
+这一节只记录当前实现现状，不代表理想设计。
 
-- `components/chat/create-artifact.tsx`
-- `components/chat/artifact.tsx`
-- `components/chat/data-stream-handler.tsx`
-- `lib/artifacts/server.ts`
-- `lib/ai/tools/create-document.ts`
-- `lib/ai/tools/update-document.ts`
-- `lib/ai/tools/edit-document.ts`
-- `lib/ai/tools/request-suggestions.ts`
+## 11.1 `image` 不是完整接通的 Artifact
 
-如果是第一次接手这个模块，推荐阅读顺序：
+现状：
 
-1. `components/chat/create-artifact.tsx`
-2. `components/chat/artifact.tsx`
-3. `components/chat/data-stream-handler.tsx`
-4. `lib/artifacts/server.ts`
-5. `artifacts/text/client.tsx`
-6. `artifacts/text/server.ts`
-7. 其他 kind 的 `client.tsx` / `server.ts`
+- 前端支持 `image`
+- 数据库 schema 允许 `image`
+- 预览和复制 UI 已存在
+
+但：
+
+- 服务端没有 `imageDocumentHandler`
+- tool 创建入口不允许 `image`
+
+所以不要把 `image` 理解成和 `text` / `code` / `sheet` 同级完整。
+
+## 11.2 `text`、`code`、`sheet` 的流式语义不一样
+
+现状：
+
+- `text` 是追加增量
+- `code` / `sheet` 是整稿覆盖
+
+这会直接影响：
+
+- `onStreamPart` 的写法
+- 编辑器如何感知内容变化
+- 你调试“为什么内容重复/覆盖”时该看哪里
+
+## 11.3 metadata 是按 `documentId` 分桶，不是按版本分桶
+
+现状：
+
+- key 只和 `documentId` 绑定
+- 不和 `createdAt` 绑定
+
+这对一些“严格版本隔离的前端派生状态”来说不一定够精细。
+
+## 11.4 手工编辑不会新增版本
+
+这是最容易误判的一点。
+
+现状：
+
+- agent 的 create / update / edit 会新增版本
+- 面板内手工编辑保存会原地改最新版本
+
+所以如果你在看版本历史时发现“有些修改没生成新版本”，优先想到的是这条语义差异。
+
+## 11.5 当前缺少 Artifact 专项测试
+
+仓库里有：
+
+- 聊天页基础 E2E
+- API 与建议相关测试
+
+但没有围绕 Artifact 全生命周期的专项测试，例如：
+
+- 不同 kind 的创建与更新
+- 版本新增语义
+- 手工编辑的原地更新语义
+- `image` 的半接入状态边界
+
+做二开时，建议优先把这部分测试补起来。
+
+---
+
+## 12. 推荐读码顺序
+
+如果你要真正读懂 Artifact，不要一上来钻 `artifacts/text/client.tsx`。
+
+推荐顺序如下。
+
+## 12.1 先看宿主和状态
+
+先读：
+
+1. `components/chat/artifact.tsx`
+2. `hooks/use-artifact.ts`
+
+目标：
+
+- 弄清“面板怎么打开”
+- 弄清“当前打开哪个文档”存在什么状态里
+- 弄清“版本和保存”是谁在管
+
+## 12.2 再看流式消费
+
+再读：
+
+1. `components/chat/data-stream-handler.tsx`
+2. `lib/types.ts`
+
+目标：
+
+- 弄清有哪些 `data-*` 事件
+- 弄清通用事件和类型事件分别在哪里消费
+
+## 12.3 再看服务端注册中心
+
+再读：
+
+1. `lib/artifacts/server.ts`
+2. `lib/agent/tools/create-document.ts`
+3. `lib/agent/tools/update-document.ts`
+4. `lib/agent/tools/edit-document.ts`
+
+目标：
+
+- 弄清 handler 怎么注册
+- 弄清 create / update / edit 的差别
+- 弄清为什么有的路径新增版本，有的不新增
+
+## 12.4 然后挑一种具体类型深挖
+
+推荐先看 `text`：
+
+1. `artifacts/text/client.tsx`
+2. `artifacts/text/server.ts`
+3. `lib/agent/tools/request-suggestions.ts`
+4. `lib/editor/suggestions.tsx`
+
+看完 `text` 后，再看 `code`，会更容易对比出“增量流”和“整稿流”的不同。
+
+## 12.5 最后回到聊天主入口
+
+最后再回看：
+
+1. `app/(chat)/api/chat/route.ts`
+2. `lib/agent/agent.ts`
+3. `components/chat/message.tsx`
+4. `components/chat/document-preview.tsx`
+
+目标：
+
+- 把 Artifact 主链和聊天主链闭环
+- 理解为什么 Artifact 同时出现在消息区和侧边面板
+
+---
+
+## 13. 读完后你应该能回答的 4 个问题
+
+如果这份文档起作用了，你读完后应该能独立回答：
+
+1. Artifact 是什么，它和聊天消息、数据库文档、tool output 分别是什么关系？
+2. 一个 Artifact 从模型决定创建，到前端面板出现、再到数据库落盘，中间经过了哪些文件？
+3. 为什么有些修改会新增版本，有些不会？
+4. 如果我要新增一个新的 Artifact kind，真实需要补哪些接入点？
+
+只要这四个问题你能答出来，就已经不仅是“会用 Artifact”，而是开始具备维护和二开的基础了。
