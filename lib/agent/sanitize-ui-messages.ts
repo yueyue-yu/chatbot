@@ -1,12 +1,3 @@
-function isLegacyPlanTaskPart(part: unknown) {
-  return (
-    typeof part === "object" &&
-    part !== null &&
-    "type" in part &&
-    part.type === "tool-planTask"
-  );
-}
-
 type MessageWithParts = {
   parts: unknown[];
   role?: unknown;
@@ -27,18 +18,10 @@ export function sanitizeAgentUIMessages<T>(messages: T[]): T[] {
       return [message];
     }
 
-    const sanitizedParts = message.parts.filter(
-      (part) => !isLegacyPlanTaskPart(part)
-    );
-
-    if (sanitizedParts.length === 0 && message.role === "assistant") {
-      return [];
-    }
-
     return [
       {
         ...message,
-        parts: sanitizedParts,
+        parts: message.parts,
       } as T,
     ];
   });

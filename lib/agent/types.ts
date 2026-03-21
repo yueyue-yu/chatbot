@@ -1,7 +1,7 @@
 import type { InferUITool, UIMessage } from "ai";
-import type { createDocument } from "@/lib/ai/tools/create-document";
-import type { editDocument } from "@/lib/ai/tools/edit-document";
-import type { updateDocument } from "@/lib/ai/tools/update-document";
+import type { createDocument } from "@/lib/agent/tools/create-document";
+import type { editDocument } from "@/lib/agent/tools/edit-document";
+import type { updateDocument } from "@/lib/agent/tools/update-document";
 
 type createDocumentTool = InferUITool<ReturnType<typeof createDocument>>;
 type editDocumentTool = InferUITool<ReturnType<typeof editDocument>>;

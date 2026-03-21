@@ -2,12 +2,12 @@ import type { UIMessageStreamWriter } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import type { Session } from "next-auth";
 import { agentArtifactsPrompt } from "@/lib/agent/prompts";
+import { createDocument } from "@/lib/agent/tools/create-document";
+import { editDocument } from "@/lib/agent/tools/edit-document";
+import { requestSuggestions } from "@/lib/agent/tools/request-suggestions";
+import { updateDocument } from "@/lib/agent/tools/update-document";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
-import { createDocument } from "@/lib/ai/tools/create-document";
-import { editDocument } from "@/lib/ai/tools/edit-document";
-import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
-import { updateDocument } from "@/lib/ai/tools/update-document";
 import { isProductionEnvironment } from "@/lib/constants";
 import type { ChatMessage } from "@/lib/types";
 
