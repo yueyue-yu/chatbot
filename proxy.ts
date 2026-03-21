@@ -4,8 +4,6 @@ import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const isAgentPage = pathname === "/agent";
-  const isAgentApi = pathname.startsWith("/api/agent");
 
   if (pathname.startsWith("/ping")) {
     return new Response("pong", { status: 200 });
@@ -24,14 +22,6 @@ export async function proxy(request: NextRequest) {
   const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
   if (!token) {
-    if (isAgentApi) {
-      return NextResponse.next();
-    }
-
-    if (isAgentPage) {
-      return NextResponse.redirect(new URL(`${base}/login`, request.url));
-    }
-
     const redirectUrl = encodeURIComponent(new URL(request.url).pathname);
 
     return NextResponse.redirect(
@@ -40,10 +30,6 @@ export async function proxy(request: NextRequest) {
   }
 
   const isGuest = guestRegex.test(token?.email ?? "");
-
-  if (isGuest && isAgentPage) {
-    return NextResponse.redirect(new URL(`${base}/login`, request.url));
-  }
 
   if (token && !isGuest && ["/login", "/register"].includes(pathname)) {
     return NextResponse.redirect(new URL(`${base}/`, request.url));

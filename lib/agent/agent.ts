@@ -1,7 +1,6 @@
 import type { UIMessageStreamWriter } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import type { Session } from "next-auth";
-import { agentArtifactsPrompt } from "@/lib/agent/prompts";
 import { createDocument } from "@/lib/agent/tools/create-document";
 import { editDocument } from "@/lib/agent/tools/edit-document";
 import { requestSuggestions } from "@/lib/agent/tools/request-suggestions";
@@ -10,18 +9,6 @@ import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { isProductionEnvironment } from "@/lib/constants";
 import type { ChatMessage } from "@/lib/types";
-
-function createNoopDataStream(): UIMessageStreamWriter<ChatMessage> {
-  return {
-    merge(_stream) {
-      return undefined;
-    },
-    onError: undefined,
-    write(_part) {
-      return undefined;
-    },
-  };
-}
 
 function createArtifactTools({
   dataStream,
@@ -53,29 +40,6 @@ function createArtifactTools({
       session,
     }),
   };
-}
-
-export function createArtifactAgent({
-  modelId,
-  session,
-}: {
-  modelId: string;
-  session: Session;
-}) {
-  const dataStream = createNoopDataStream();
-  const { requestSuggestions: _requestSuggestions, ...tools } =
-    createArtifactTools({
-      dataStream,
-      modelId,
-      session,
-    });
-
-  return new ToolLoopAgent({
-    model: getLanguageModel(modelId),
-    instructions: agentArtifactsPrompt,
-    stopWhen: stepCountIs(4),
-    tools,
-  });
 }
 
 export function createChatAgent({
