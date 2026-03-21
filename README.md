@@ -50,6 +50,17 @@ These flags control attachment support, tool availability, and reasoning UI beha
 
 For a maintainer-oriented walkthrough of the repository layout, request flow, and key entry points, see [docs/project-structure.md](docs/project-structure.md).
 
+## Maintainer Docs
+
+If you are extending or maintaining this project, these internal docs are the best starting points:
+
+- [docs/project-structure.md](docs/project-structure.md)
+  Repository map, request flow, and major entry points.
+- [docs/artifacts.md](docs/artifacts.md)
+  Artifact lifecycle, stream protocol, version semantics, and extension checklist.
+- [docs/project-learning-path.md](docs/project-learning-path.md)
+  A practical study path for engineers who want to modify or extend the project.
+
 ## Running locally
 
 You will need to use the environment variables [defined in `.env.example`](.env.example) to run Chatbot. For local development, a `.env.local` file is all that is necessary.
