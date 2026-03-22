@@ -47,6 +47,45 @@ function createUiMessageStreamBody(text: string) {
     .join("")}data: [DONE]\n\n`;
 }
 
+function createAskUserQuestionStreamBody() {
+  const chunks = [
+    { type: "start" },
+    { type: "start-step" },
+    {
+      type: "tool-input-start",
+      toolCallId: "ask-user-question-1",
+      toolName: "askUserQuestion",
+    },
+    {
+      type: "tool-input-available",
+      toolCallId: "ask-user-question-1",
+      toolName: "askUserQuestion",
+      input: {
+        question: "Which stack should we target?",
+        options: [
+          {
+            label: "Next.js",
+            value: "nextjs",
+            description: "Use the App Router implementation",
+          },
+          {
+            label: "Remix",
+            value: "remix",
+            description: "Target the Remix code path",
+          },
+        ],
+        placeholder: "Describe your preferred stack",
+      },
+    },
+    { type: "finish-step" },
+    { type: "finish", finishReason: "tool-calls" },
+  ];
+
+  return `${chunks
+    .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+    .join("")}data: [DONE]\n\n`;
+}
+
 test.describe("Chat API Integration", () => {
   test.beforeEach(async ({ page }) => {
     await registerAndAuthenticate(page);
@@ -257,6 +296,205 @@ test.describe("Chat Error Handling", () => {
     await expect(page.getByText(ERROR_TEXT_REGEX).first()).toBeVisible({
       timeout: 5000,
     });
+  });
+});
+
+test.describe("Ask User Question Tool", () => {
+  test.beforeEach(async ({ page }) => {
+    await registerAndAuthenticate(page);
+  });
+
+  test("renders ask-user-question options with an Other action", async ({
+    page,
+  }) => {
+    await page.route("**/api/chat", async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body: createAskUserQuestionStreamBody(),
+      });
+    });
+
+    await page.goto("/");
+    await page.getByTestId("multimodal-input").fill("Help me build this");
+    await page.getByTestId("send-button").click();
+
+    await expect(
+      page.getByText("Which stack should we target?")
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Next.js" })
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remix" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Other" })).toBeVisible();
+  });
+
+  test("selecting an option submits the option value as the next user message", async ({
+    page,
+  }) => {
+    let requestCount = 0;
+    await page.route("**/api/chat", async (route) => {
+      requestCount += 1;
+
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body:
+          requestCount === 1
+            ? createAskUserQuestionStreamBody()
+            : createUiMessageStreamBody("Thanks for the clarification"),
+      });
+    });
+
+    await page.goto("/");
+    await page.getByTestId("multimodal-input").fill("Build the app");
+    await page.getByTestId("send-button").click();
+    await expect(
+      page.getByRole("button", { name: "Next.js" })
+    ).toBeVisible();
+
+    const secondRequestPromise = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/chat") && request.method() === "POST"
+    );
+
+    await page.getByRole("button", { name: "Next.js" }).click();
+
+    const secondRequest = await secondRequestPromise;
+    const body = getChatRequestBody(secondRequest);
+
+    expect(body.message.parts).toEqual([
+      {
+        type: "text",
+        text: "nextjs",
+      },
+    ]);
+  });
+
+  test("Other reveals a text input and submits custom text", async ({
+    page,
+  }) => {
+    let requestCount = 0;
+    await page.route("**/api/chat", async (route) => {
+      requestCount += 1;
+
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body:
+          requestCount === 1
+            ? createAskUserQuestionStreamBody()
+            : createUiMessageStreamBody("Custom answer received"),
+      });
+    });
+
+    await page.goto("/");
+    await page.getByTestId("multimodal-input").fill("Build the app");
+    await page.getByTestId("send-button").click();
+
+    await page.getByTestId("ask-user-question-other-button").click();
+    const customInput = page.getByTestId("ask-user-question-other-input");
+    await expect(customInput).toBeVisible();
+
+    const secondRequestPromise = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/chat") && request.method() === "POST"
+    );
+
+    await customInput.fill("Use SvelteKit instead");
+    await page.getByTestId("ask-user-question-other-submit").click();
+
+    const secondRequest = await secondRequestPromise;
+    const body = getChatRequestBody(secondRequest);
+
+    expect(body.message.parts).toEqual([
+      {
+        type: "text",
+        text: "Use SvelteKit instead",
+      },
+    ]);
+  });
+
+  test("composer is disabled while the question is pending and re-enabled after answering", async ({
+    page,
+  }) => {
+    let requestCount = 0;
+    await page.route("**/api/chat", async (route) => {
+      requestCount += 1;
+
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body:
+          requestCount === 1
+            ? createAskUserQuestionStreamBody()
+            : createUiMessageStreamBody("All set"),
+      });
+    });
+
+    await page.goto("/");
+    const composer = page.getByTestId("multimodal-input");
+    await composer.fill("Build the app");
+    await page.getByTestId("send-button").click();
+
+    await expect(composer).toBeDisabled();
+    await page.getByRole("button", { name: "Remix" }).click();
+    await expect(composer).toBeEnabled();
+  });
+
+  test("answered ask-user-question cards become read-only", async ({
+    page,
+  }) => {
+    let requestCount = 0;
+    await page.route("**/api/chat", async (route) => {
+      requestCount += 1;
+
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream",
+          "x-vercel-ai-ui-message-stream": "v1",
+        },
+        body:
+          requestCount === 1
+            ? createAskUserQuestionStreamBody()
+            : createUiMessageStreamBody("Done"),
+      });
+    });
+
+    await page.goto("/");
+    await page.getByTestId("multimodal-input").fill("Build the app");
+    await page.getByTestId("send-button").click();
+
+    await page.getByRole("button", { name: "Next.js" }).click();
+
+    await expect(page.getByText("Answer: Next.js")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Next.js" })
+    ).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Other" })).not.toBeVisible();
   });
 });
 

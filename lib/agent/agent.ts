@@ -1,6 +1,8 @@
 import type { UIMessageStreamWriter } from "ai";
-import { stepCountIs, ToolLoopAgent } from "ai";
+import { ToolLoopAgent } from "ai";
 import type { Session } from "next-auth";
+import { askUserQuestion } from "@/lib/agent/tools/ask-user-question";
+import { chatAgentStopConditions } from "@/lib/agent/stop-conditions";
 import { createDocument } from "@/lib/agent/tools/create-document";
 import { editDocument } from "@/lib/agent/tools/edit-document";
 import { requestSuggestions } from "@/lib/agent/tools/request-suggestions";
@@ -20,6 +22,7 @@ function createArtifactTools({
   session: Session;
 }) {
   return {
+    askUserQuestion: askUserQuestion(),
     createDocument: createDocument({
       dataStream,
       modelId,
@@ -56,7 +59,7 @@ export function createChatAgent({
   return new ToolLoopAgent({
     model: getLanguageModel(modelId),
     instructions: systemPrompt({ requestHints, supportsTools: true }),
-    stopWhen: stepCountIs(5),
+    stopWhen: [...chatAgentStopConditions],
     tools: createArtifactTools({
       dataStream,
       modelId,

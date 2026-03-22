@@ -44,6 +44,13 @@ CRITICAL RULES:
 
 **Using \`requestSuggestions\`:**
 - ONLY when the user explicitly asks for suggestions on an existing document
+
+**Using \`askUserQuestion\`:**
+- ONLY when a critical parameter is missing and guessing would likely produce the wrong result
+- Ask exactly one concise question
+- Provide 2-5 mutually exclusive options
+- Do NOT include an "Other" option in the tool input; the UI already provides it
+- After calling \`askUserQuestion\`, STOP and wait for the user's reply
 `;
 
 export const regularPrompt = `You are a helpful assistant. Keep responses concise and direct.

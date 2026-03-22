@@ -12,6 +12,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "../ai-elements/tool";
+import { AskUserQuestionTool } from "./ask-user-question-tool";
 import { useDataStream } from "./data-stream-provider";
 import { DocumentToolResult } from "./document";
 import { DocumentPreview } from "./document-preview";
@@ -217,6 +218,17 @@ const PurePreviewMessage = ({
             )}
           </ToolContent>
         </Tool>
+      );
+    }
+
+    if (type === "tool-askUserQuestion") {
+      return (
+        <AskUserQuestionTool
+          isReadonly={isReadonly}
+          key={part.toolCallId}
+          message={message}
+          part={part}
+        />
       );
     }
 

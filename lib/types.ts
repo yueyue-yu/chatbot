@@ -1,6 +1,7 @@
 import type { InferUITool, UIMessage } from "ai";
 import { z } from "zod";
 import type { ArtifactKind } from "@/components/chat/artifact";
+import type { askUserQuestion } from "./agent/tools/ask-user-question";
 import type { createDocument } from "./agent/tools/create-document";
 import type { editDocument } from "./agent/tools/edit-document";
 import type { requestSuggestions } from "./agent/tools/request-suggestions";
@@ -16,11 +17,13 @@ export type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 type createDocumentTool = InferUITool<ReturnType<typeof createDocument>>;
 type editDocumentTool = InferUITool<ReturnType<typeof editDocument>>;
 type updateDocumentTool = InferUITool<ReturnType<typeof updateDocument>>;
+type askUserQuestionTool = InferUITool<ReturnType<typeof askUserQuestion>>;
 type requestSuggestionsTool = InferUITool<
   ReturnType<typeof requestSuggestions>
 >;
 
 export type ChatTools = {
+  askUserQuestion: askUserQuestionTool;
   createDocument: createDocumentTool;
   editDocument: editDocumentTool;
   updateDocument: updateDocumentTool;

@@ -81,6 +81,7 @@ function PureMultimodalInput({
   onModelChange,
   editingMessage,
   onCancelEdit,
+  isAskUserQuestionPending,
   isLoading,
 }: {
   chatId: string;
@@ -101,6 +102,7 @@ function PureMultimodalInput({
   onModelChange?: (modelId: string) => void;
   editingMessage?: ChatMessage | null;
   onCancelEdit?: () => void;
+  isAskUserQuestionPending: boolean;
   isLoading?: boolean;
 }) {
   const router = useRouter();
@@ -223,7 +225,7 @@ function PureMultimodalInput({
       `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
     );
 
-    const pendingMessage = {
+    const pendingMessage: Parameters<UseChatHelpers<ChatMessage>["sendMessage"]>[0] = {
       role: "user",
       parts: [
         ...pendingAttachments.map((attachment) => ({
@@ -233,7 +235,7 @@ function PureMultimodalInput({
           mediaType: attachment.contentType,
         })),
         {
-          type: "text",
+          type: "text" as const,
           text: pendingText,
         },
       ],
@@ -389,6 +391,12 @@ function PureMultimodalInput({
         </div>
       )}
 
+      {!editingMessage && isAskUserQuestionPending && (
+        <div className="text-[12px] text-muted-foreground">
+          Answer the question above to continue.
+        </div>
+      )}
+
       {!editingMessage &&
         !isLoading &&
         messages.length === 0 &&
@@ -424,6 +432,9 @@ function PureMultimodalInput({
       <PromptInput
         className="[&>div]:rounded-2xl [&>div]:border [&>div]:border-border/30 [&>div]:bg-card/70 [&>div]:shadow-[var(--shadow-composer)] [&>div]:transition-shadow [&>div]:duration-300 [&>div]:focus-within:shadow-[var(--shadow-composer-focus)]"
         onSubmit={async () => {
+          if (isAskUserQuestionPending) {
+            return;
+          }
           if (input.startsWith("/")) {
             const query = input.slice(1).trim();
             const cmd = slashCommands.find((c) => c.name === query);
@@ -488,6 +499,7 @@ function PureMultimodalInput({
         <PromptInputTextarea
           className="min-h-24 text-[13px] leading-relaxed px-4 pt-3.5 pb-1.5 placeholder:text-muted-foreground/35"
           data-testid="multimodal-input"
+          disabled={isAskUserQuestionPending}
           onChange={handleInput}
           onKeyDown={(e) => {
             if (slashOpen) {
@@ -523,14 +535,22 @@ function PureMultimodalInput({
             }
           }}
           placeholder={
-            editingMessage ? "Edit your message..." : "Ask anything..."
+            isAskUserQuestionPending
+              ? "Answer the question above..."
+              : editingMessage
+                ? "Edit your message..."
+                : "Ask anything..."
           }
           ref={textareaRef}
           value={input}
         />
         <PromptInputFooter className="px-3 pb-3">
           <PromptInputTools>
-            <AttachmentsButton fileInputRef={fileInputRef} status={status} />
+            <AttachmentsButton
+              disabled={isAskUserQuestionPending}
+              fileInputRef={fileInputRef}
+              status={status}
+            />
             <ModelSelectorCompact
               onModelChange={onModelChange}
               selectedModelId={selectedModelId}
@@ -548,7 +568,11 @@ function PureMultimodalInput({
                   : "bg-muted text-muted-foreground/25 cursor-not-allowed"
               )}
               data-testid="send-button"
-              disabled={!input.trim() || uploadQueue.length > 0}
+              disabled={
+                isAskUserQuestionPending ||
+                !input.trim() ||
+                uploadQueue.length > 0
+              }
               status={status}
               variant="secondary"
             >
@@ -594,9 +618,11 @@ export const MultimodalInput = memo(
 );
 
 function PureAttachmentsButton({
+  disabled,
   fileInputRef,
   status,
 }: {
+  disabled: boolean;
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
   status: UseChatHelpers<ChatMessage>["status"];
 }) {
@@ -612,12 +638,12 @@ function PureAttachmentsButton({
     <Button
       className={cn(
         "h-7 w-7 rounded-lg border border-border/40 p-1 transition-colors",
-        hasVision
+        hasVision && !disabled
           ? "text-foreground hover:border-border hover:text-foreground"
           : "text-muted-foreground/30 cursor-not-allowed"
       )}
       data-testid="attachments-button"
-      disabled={status !== "ready" || !hasVision}
+      disabled={disabled || status !== "ready" || !hasVision}
       onClick={(event) => {
         event.preventDefault();
         fileInputRef.current?.click();
