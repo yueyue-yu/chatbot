@@ -111,6 +111,8 @@ function PureMultimodalInput({
   const { width } = useWindowSize();
   const hasAutoFocused = useRef(false);
   useEffect(() => {
+    // Delay the first focus until layout has settled; focusing immediately on
+    // mount is noticeably less reliable on mobile and during shell transitions.
     if (!hasAutoFocused.current && width) {
       const timer = setTimeout(() => {
         textareaRef.current?.focus();
@@ -127,6 +129,8 @@ function PureMultimodalInput({
   const hasRestoredDraft = useRef(false);
 
   useEffect(() => {
+    // Restore the saved draft only once. After that, the live in-memory input
+    // becomes the source of truth and should not be overwritten by storage.
     if (hasRestoredDraft.current || !localStorageInput) {
       return;
     }
@@ -143,6 +147,8 @@ function PureMultimodalInput({
     const val = event.target.value;
     setInput(val);
 
+    // Slash mode only applies while the user is typing the command token
+    // itself. As soon as a space appears, we fall back to normal prompting.
     if (val.startsWith("/") && !val.includes(" ")) {
       setSlashOpen(true);
       setSlashQuery(val.slice(1));
@@ -216,9 +222,13 @@ function PureMultimodalInput({
   const [slashIndex, setSlashIndex] = useState(0);
 
   const submitForm = useCallback(async () => {
+    // Snapshot the composer state before clearing it so async sendMessage calls
+    // cannot accidentally read a newer render's input or attachment list.
     const pendingText = input;
     const pendingAttachments = attachments;
 
+    // Promote the blank-chat URL to /chat/:id on first submit so refresh and
+    // resumable-stream logic can target the persisted thread immediately.
     window.history.pushState(
       {},
       "",
@@ -332,6 +342,8 @@ function PureMultimodalInput({
         return;
       }
 
+      // Only intercept paste when images are present; plain-text paste should
+      // continue through the textarea's native behavior.
       event.preventDefault();
 
       setUploadQueue((prev) => [...prev, "Pasted image"]);
@@ -402,6 +414,8 @@ function PureMultimodalInput({
         messages.length === 0 &&
         attachments.length === 0 &&
         uploadQueue.length === 0 && (
+          // Starter actions only make sense for a truly empty composer. Hide
+          // them as soon as the user starts typing or staging uploads.
           <SuggestedActions
             chatId={chatId}
             selectedVisibilityType={selectedVisibilityType}
@@ -435,6 +449,8 @@ function PureMultimodalInput({
           if (isAskUserQuestionPending) {
             return;
           }
+          // The composer submit key does triple duty: run slash commands,
+          // send a normal message, or replace an edited message mid-stream.
           if (input.startsWith("/")) {
             const query = input.slice(1).trim();
             const cmd = slashCommands.find((c) => c.name === query);
@@ -689,6 +705,8 @@ function PureModelSelectorCompact({
       setCookie("chat-model", trimmedModelId);
       setOpen(false);
       setQuery("");
+      // Return focus to the composer so keyboard users can keep typing without
+      // an extra click after switching models.
       setTimeout(() => {
         document
           .querySelector<HTMLTextAreaElement>(

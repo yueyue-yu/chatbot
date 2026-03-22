@@ -50,6 +50,8 @@ export function ChatShell() {
   useEffect(() => {
     if (prevChatIdRef.current !== chatId) {
       prevChatIdRef.current = chatId;
+      // ChatShell survives route transitions, so reset all thread-scoped UI
+      // when the active chat changes instead of leaking state across chats.
       stopRef.current();
       setArtifact(initialArtifactData);
       setEditingMessage(null);
@@ -112,6 +114,8 @@ export function ChatShell() {
                   selectedModelId={currentModelId}
                   selectedVisibilityType={visibilityType}
                   sendMessage={
+                    // Editing routes submission through the "replace existing
+                    // user message" path; otherwise we send a normal new turn.
                     editingMessage
                       ? async () => {
                           const msg = editingMessage;
@@ -155,6 +159,8 @@ export function ChatShell() {
         />
       </div>
 
+      {/* Keep the artifact stream bridge mounted alongside the shell so custom
+          data parts are processed even though they render outside the timeline. */}
       <DataStreamHandler />
     </>
   );

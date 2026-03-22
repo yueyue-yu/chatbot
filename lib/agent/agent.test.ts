@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createWebSearchTool } from "./tools/web-search";
 import { chatAgentStopConditions } from "./stop-conditions";
 
 test("chat agent stops when askUserQuestion is called in the current step", async () => {
@@ -34,4 +35,10 @@ test("chat agent does not stop early when askUserQuestion was not called", async
   });
 
   assert.equal(shouldStop, false);
+});
+
+test("webSearch tool can be created", () => {
+  const tool = createWebSearchTool();
+
+  assert.equal(typeof tool, "object");
 });

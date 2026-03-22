@@ -4,6 +4,7 @@
 
 如果你只想先知道仓库大图，先看 [project-structure.md](./project-structure.md)。
 如果你想按步骤带着自己读源码，再看 [project-learning-path.md](./project-learning-path.md)。
+如果你现在最想搞清楚这套 `data-*` UI 事件的来源和消费链路，先看 [data-stream-events.md](./data-stream-events.md)。
 
 ---
 

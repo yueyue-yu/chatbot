@@ -66,6 +66,9 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
 
   const chatIdFromUrl = extractChatId(pathname);
   const isNewChat = !chatIdFromUrl;
+  // New chats do not have a persisted id in the URL yet, but the composer and
+  // optimistic message state still need a stable key. We keep one synthetic id
+  // per "blank chat" visit and rotate it when the route changes back to /chat.
   const newChatIdRef = useRef(generateUUID());
   const prevPathnameRef = useRef(pathname);
 
@@ -77,6 +80,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   const chatId = chatIdFromUrl ?? newChatIdRef.current;
 
   const [currentModelId, setCurrentModelId] = useState("");
+  // The transport callback can outlive the render that created it, so mirror
+  // the selected model in a ref and read that ref at submit time.
   const currentModelIdRef = useRef(currentModelId);
   useEffect(() => {
     currentModelIdRef.current = currentModelId;
@@ -98,6 +103,9 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   const initialVisibilityType: VisibilityType = isNewChat
     ? "private"
     : (chatData?.visibility ?? "private");
+  // Visibility can change locally before the server response catches up. This
+  // chat-scoped SWR entry keeps the latest local choice from flickering back
+  // to the fetched fallback during revalidation.
   const { data: localVisibility, mutate: setLocalVisibility } =
     useSWR<VisibilityType>(`${chatId}-visibility`, null, {
       fallbackData: initialVisibilityType,
@@ -111,6 +119,9 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     }
   }, [chatData?.visibility, setLocalVisibility]);
 
+  // useChat owns the canonical message timeline for the active thread. Artifact
+  // updates still arrive on the same SSE stream, but we siphon those custom
+  // data parts into the artifact side channel via onData below.
   const {
     messages,
     setMessages,
@@ -130,6 +141,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       prepareSendMessagesRequest(request) {
         return {
           body: {
+            // Read the model from the ref so late submits do not accidentally
+            // send using a stale render's model selection.
             ...buildChatRequestBody({
               chatId: request.id,
               messages: request.messages,
@@ -144,6 +157,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     sendAutomaticallyWhen: ({ messages }) =>
       isResolvedAskUserQuestionMessage(messages.at(-1)),
     onData: (dataPart) => {
+      // Forward artifact/tool side-channel events (data-kind, data-textDelta,
+      // data-finish, etc.) to DataStreamHandler, which updates the artifact UI.
       setDataStream((ds) => (ds ? [...ds, dataPart] : []));
     },
     onFinish: () => {
@@ -161,6 +176,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  // Once a chat has been seeded into useChat, do not push fetched history back
+  // into it on every SWR refresh or we would overwrite local streaming state.
   const loadedChatIds = useRef(new Set<string>());
 
   if (isNewChat && !loadedChatIds.current.has(newChatIdRef.current)) {
@@ -182,6 +199,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     if (prevChatIdRef.current !== chatId) {
       prevChatIdRef.current = chatId;
       if (isNewChat) {
+        // The provider stays mounted across route changes, so clear the in-
+        // memory transcript when the user lands on a fresh, unsaved chat shell.
         setMessages([]);
       }
     }
@@ -200,6 +219,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
 
   const hasAppendedQueryRef = useRef(false);
   useEffect(() => {
+    // Some entry points deep-link with ?query=... . Turn that into a real user
+    // message once, then rewrite the URL so refreshes do not resend it.
     const params = new URLSearchParams(window.location.search);
     const query = params.get("query");
     if (query && !hasAppendedQueryRef.current) {
@@ -216,6 +237,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     }
   }, [sendMessage, chatId]);
 
+  // Stream resumption only applies to persisted chats whose initial history has
+  // loaded; new chats have no server-side stream to reconnect to.
   useAutoResume({
     autoResume: !isNewChat && !!chatData,
     initialMessages,

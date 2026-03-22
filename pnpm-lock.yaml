@@ -32,6 +32,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.35.3
         version: 6.36.4
+      '@exalabs/ai-sdk':
+        specifier: ^2.0.0
+        version: 2.0.0(ai@6.0.116(zod@3.25.76))
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0
@@ -879,6 +882,11 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@exalabs/ai-sdk@2.0.0':
+    resolution: {integrity: sha512-883EwfpesP37OBp23AQgFMsFYqDAWMeo0i2Kh+Oaz4q9gTj++XCh+K6pJgGC3yMgf6oz116+6MXkerziIut1kg==}
+    peerDependencies:
+      ai: ^6.0.0
 
   '@fastify/busboy@2.1.1':
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
@@ -4546,6 +4554,11 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.1':
     optional: true
+
+  '@exalabs/ai-sdk@2.0.0(ai@6.0.116(zod@3.25.76))':
+    dependencies:
+      ai: 6.0.116(zod@3.25.76)
+      zod: 3.25.76
 
   '@fastify/busboy@2.1.1': {}
 
