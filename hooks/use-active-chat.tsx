@@ -28,6 +28,7 @@ import {
   buildChatRequestBody,
   isResolvedAskUserQuestionMessage,
 } from "@/lib/chat/chat-request-body";
+import { hasPendingAskUserQuestion } from "@/components/chat/ask-user-question-state";
 import type { ChatMessage } from "@/lib/types";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
 
@@ -48,6 +49,7 @@ type ActiveChatContextValue = {
   votes: Vote[] | undefined;
   currentModelId: string;
   setCurrentModelId: (id: string) => void;
+  isAskUserQuestionPending: boolean;
 };
 
 const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
@@ -222,6 +224,10 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   });
 
   const isReadonly = isNewChat ? false : (chatData?.isReadonly ?? false);
+  const isAskUserQuestionPending = useMemo(
+    () => hasPendingAskUserQuestion(messages),
+    [messages]
+  );
 
   const { data: votes } = useSWR<Vote[]>(
     !isReadonly && messages.length >= 2
@@ -249,6 +255,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       votes,
       currentModelId,
       setCurrentModelId,
+      isAskUserQuestionPending,
     }),
     [
       chatId,
@@ -266,6 +273,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       isLoading,
       votes,
       currentModelId,
+      isAskUserQuestionPending,
     ]
   );
 

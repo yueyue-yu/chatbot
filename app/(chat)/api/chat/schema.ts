@@ -1,8 +1,4 @@
 import { z } from "zod";
-import {
-  askUserQuestionInputSchema,
-  askUserQuestionOutputSchema,
-} from "@/lib/agent/tools/ask-user-question";
 
 const textPartSchema = z.object({
   type: z.enum(["text"]),
@@ -24,22 +20,21 @@ const userMessageSchema = z.object({
   parts: z.array(partSchema),
 });
 
-const askUserQuestionToolPartSchema = z.object({
-  type: z.literal("tool-askUserQuestion"),
-  input: askUserQuestionInputSchema,
-  output: askUserQuestionOutputSchema,
-  state: z.literal("output-available"),
-  toolCallId: z.string().min(1),
-});
-
-const stepStartPartSchema = z.object({
-  type: z.literal("step-start"),
-});
-
 const toolMessageSchema = z.object({
   id: z.string().uuid(),
   role: z.literal("assistant"),
-  parts: z.array(z.union([stepStartPartSchema, askUserQuestionToolPartSchema])).min(1),
+  parts: z
+    .array(z.object({ type: z.string() }).passthrough())
+    .min(1)
+    .refine(
+      (parts) =>
+        parts.some(
+          (p) =>
+            p.type === "tool-askUserQuestion" &&
+            p.state === "output-available"
+        ),
+      { message: "Must include a resolved tool-askUserQuestion part" }
+    ),
 });
 
 const requestBaseSchema = z.object({

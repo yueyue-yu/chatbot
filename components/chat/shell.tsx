@@ -9,7 +9,6 @@ import {
 } from "@/hooks/use-artifact";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { hasPendingAskUserQuestion } from "./ask-user-question-state";
 import { Artifact } from "./artifact";
 import { ChatHeader } from "./chat-header";
 import { DataStreamHandler } from "./data-stream-handler";
@@ -34,6 +33,7 @@ export function ChatShell() {
     votes,
     currentModelId,
     setCurrentModelId,
+    isAskUserQuestionPending,
   } = useActiveChat();
 
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
@@ -42,7 +42,6 @@ export function ChatShell() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
   const { setArtifact } = useArtifact();
-  const isAskUserQuestionPending = hasPendingAskUserQuestion(messages);
 
   const stopRef = useRef(stop);
   stopRef.current = stop;

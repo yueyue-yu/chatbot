@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ChatMessage } from "@/lib/types";
 import {
-  findLatestPendingAskUserQuestion,
   getAskUserQuestionCardState,
   hasPendingAskUserQuestion,
 } from "./ask-user-question-state";
@@ -63,10 +62,6 @@ test("finds the latest unanswered ask-user-question card", () => {
     createAskUserQuestionMessage("assistant-1"),
   ];
 
-  assert.deepEqual(findLatestPendingAskUserQuestion(messages), {
-    messageId: "assistant-1",
-    toolCallId: "assistant-1-tool",
-  });
   assert.equal(hasPendingAskUserQuestion(messages), true);
 });
 
@@ -88,7 +83,6 @@ test("marks an ask-user-question card answered once the tool output is available
     } as ChatMessage,
   ];
 
-  assert.equal(findLatestPendingAskUserQuestion(messages), null);
   assert.equal(hasPendingAskUserQuestion(messages), false);
 
   assert.deepEqual(
@@ -121,10 +115,7 @@ test("keeps historical ask-user-question cards read-only when a newer one is pen
     secondQuestion,
   ];
 
-  assert.deepEqual(findLatestPendingAskUserQuestion(messages), {
-    messageId: "assistant-3",
-    toolCallId: "assistant-3-tool",
-  });
+  assert.equal(hasPendingAskUserQuestion(messages), true);
 
   assert.deepEqual(
     getAskUserQuestionCardState(messages, "assistant-1", "assistant-1-tool"),

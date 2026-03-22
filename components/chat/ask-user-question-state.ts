@@ -20,7 +20,7 @@ type AskUserQuestionAnswer = AskUserQuestionPart["output"] extends infer Output
   ? Output
   : never;
 
-export function getAskUserQuestionPart(
+function getAskUserQuestionPart(
   message: ChatMessage,
   toolCallId?: string
 ): AskUserQuestionPart | null {
@@ -37,7 +37,7 @@ export function getAskUserQuestionPart(
   return null;
 }
 
-export function getAskUserQuestionAnswer(
+function getAskUserQuestionAnswer(
   messages: ChatMessage[],
   messageId: string,
   toolCallId: string
@@ -52,7 +52,7 @@ export function getAskUserQuestionAnswer(
   return part.output.answer;
 }
 
-export function getAskUserQuestionAnswerLabel(
+function getAskUserQuestionAnswerLabel(
   part: AskUserQuestionPart,
   answer: string | null
 ) {
@@ -73,7 +73,7 @@ export function getAskUserQuestionAnswerLabel(
   return matchedOption?.label ?? answer;
 }
 
-export function findLatestPendingAskUserQuestion(
+function findLatestPendingAskUserQuestion(
   messages: ChatMessage[]
 ): PendingAskUserQuestion | null {
   for (let index = messages.length - 1; index >= 0; index--) {
