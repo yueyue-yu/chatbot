@@ -6,17 +6,48 @@ const ERROR_TEXT_REGEX = /error|failed|trouble/i;
 
 type ChatApiRequestBody = {
   id: string;
-  message: {
-    id: string;
-    role: "user";
-    parts: Array<
-      | { type: "text"; text: string }
-      | { type: "file"; url: string; name: string; mediaType: string }
-    >;
-  };
   selectedChatModel: string;
   selectedVisibilityType: "public" | "private";
-};
+} & (
+  | {
+      message: {
+        id: string;
+        role: "user";
+        parts: Array<
+          | { type: "text"; text: string }
+          | { type: "file"; url: string; name: string; mediaType: string }
+        >;
+      };
+    }
+  | {
+      toolMessage: {
+        id: string;
+        role: "assistant";
+        parts: Array<
+          | { type: "step-start" }
+          | {
+              type: "tool-askUserQuestion";
+              input: {
+                question: string;
+                options: Array<{
+                  label: string;
+                  value?: string;
+                  description?: string;
+                }>;
+                placeholder?: string;
+              };
+              output: {
+                answer: string;
+                label: string;
+                source: "option" | "other";
+              };
+              state: "output-available";
+              toolCallId: string;
+            }
+        >;
+      };
+    }
+);
 
 function getChatRequestBody(request: { postDataJSON(): unknown }) {
   return request.postDataJSON() as ChatApiRequestBody;
@@ -86,6 +117,64 @@ function createAskUserQuestionStreamBody() {
     .join("")}data: [DONE]\n\n`;
 }
 
+function expectAskUserQuestionToolRequest(
+  body: ChatApiRequestBody,
+  output: {
+    answer: string;
+    label: string;
+    source: "option" | "other";
+  }
+) {
+  expect("toolMessage" in body).toBe(true);
+
+  if (!("toolMessage" in body)) {
+    return;
+  }
+
+  expect(body.toolMessage.role).toBe("assistant");
+  expect(body.toolMessage.parts.some((part) => part.type === "step-start")).toBe(
+    true
+  );
+
+  const toolPart = body.toolMessage.parts.find(
+    (part): part is Extract<(typeof body.toolMessage.parts)[number], { type: "tool-askUserQuestion" }> =>
+      part.type === "tool-askUserQuestion"
+  );
+
+  expect(toolPart).toEqual({
+    type: "tool-askUserQuestion",
+    input: {
+      question: "Which stack should we target?",
+      options: [
+        {
+          label: "Next.js",
+          value: "nextjs",
+          description: "Use the App Router implementation",
+        },
+        {
+          label: "Remix",
+          value: "remix",
+          description: "Target the Remix code path",
+        },
+      ],
+      placeholder: "Describe your preferred stack",
+    },
+    output,
+    state: "output-available",
+    toolCallId: "ask-user-question-1",
+  });
+}
+
+function expectUserMessageRequest(body: ChatApiRequestBody) {
+  expect("message" in body).toBe(true);
+
+  if (!("message" in body)) {
+    throw new Error("Expected a user-message /api/chat request.");
+  }
+
+  return body.message;
+}
+
 test.describe("Chat API Integration", () => {
   test.beforeEach(async ({ page }) => {
     await registerAndAuthenticate(page);
@@ -123,9 +212,10 @@ test.describe("Chat API Integration", () => {
 
     const request = await requestPromise;
     const body = getChatRequestBody(request);
+    const message = expectUserMessageRequest(body);
 
-    expect(body.message.role).toBe("user");
-    expect(body.message.parts).toEqual([
+    expect(message.role).toBe("user");
+    expect(message.parts).toEqual([
       {
         type: "text",
         text: "Hello",
@@ -259,9 +349,10 @@ test.describe("Chat API Integration", () => {
 
     const request = await requestPromise;
     const body = getChatRequestBody(request);
+    const message = expectUserMessageRequest(body);
 
-    expect(body.message.role).toBe("user");
-    expect(body.message.parts).toEqual([
+    expect(message.role).toBe("user");
+    expect(message.parts).toEqual([
       {
         type: "text",
         text: editedText,
@@ -334,7 +425,7 @@ test.describe("Ask User Question Tool", () => {
     await expect(page.getByRole("button", { name: "Other" })).toBeVisible();
   });
 
-  test("selecting an option submits the option value as the next user message", async ({
+  test("selecting an option submits askUserQuestion tool output", async ({
     page,
   }) => {
     let requestCount = 0;
@@ -373,15 +464,14 @@ test.describe("Ask User Question Tool", () => {
     const secondRequest = await secondRequestPromise;
     const body = getChatRequestBody(secondRequest);
 
-    expect(body.message.parts).toEqual([
-      {
-        type: "text",
-        text: "nextjs",
-      },
-    ]);
+    expectAskUserQuestionToolRequest(body, {
+      answer: "nextjs",
+      label: "Next.js",
+      source: "option",
+    });
   });
 
-  test("Other reveals a text input and submits custom text", async ({
+  test("Other reveals a text input and submits custom tool output", async ({
     page,
   }) => {
     let requestCount = 0;
@@ -422,12 +512,11 @@ test.describe("Ask User Question Tool", () => {
     const secondRequest = await secondRequestPromise;
     const body = getChatRequestBody(secondRequest);
 
-    expect(body.message.parts).toEqual([
-      {
-        type: "text",
-        text: "Use SvelteKit instead",
-      },
-    ]);
+    expectAskUserQuestionToolRequest(body, {
+      answer: "Use SvelteKit instead",
+      label: "Use SvelteKit instead",
+      source: "other",
+    });
   });
 
   test("composer is disabled while the question is pending and re-enabled after answering", async ({

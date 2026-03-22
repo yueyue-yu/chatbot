@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  askUserQuestionInputSchema,
+  askUserQuestionOutputSchema,
+} from "@/lib/agent/tools/ask-user-question";
 
 const textPartSchema = z.object({
   type: z.enum(["text"]),
@@ -20,11 +24,37 @@ const userMessageSchema = z.object({
   parts: z.array(partSchema),
 });
 
-export const postRequestBodySchema = z.object({
+const askUserQuestionToolPartSchema = z.object({
+  type: z.literal("tool-askUserQuestion"),
+  input: askUserQuestionInputSchema,
+  output: askUserQuestionOutputSchema,
+  state: z.literal("output-available"),
+  toolCallId: z.string().min(1),
+});
+
+const stepStartPartSchema = z.object({
+  type: z.literal("step-start"),
+});
+
+const toolMessageSchema = z.object({
   id: z.string().uuid(),
-  message: userMessageSchema,
+  role: z.literal("assistant"),
+  parts: z.array(z.union([stepStartPartSchema, askUserQuestionToolPartSchema])).min(1),
+});
+
+const requestBaseSchema = z.object({
+  id: z.string().uuid(),
   selectedChatModel: z.string(),
   selectedVisibilityType: z.enum(["public", "private"]),
 });
+
+export const postRequestBodySchema = z.union([
+  requestBaseSchema.extend({
+    message: userMessageSchema,
+  }),
+  requestBaseSchema.extend({
+    toolMessage: toolMessageSchema,
+  }),
+]);
 
 export type PostRequestBody = z.infer<typeof postRequestBodySchema>;

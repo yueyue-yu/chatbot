@@ -1,5 +1,4 @@
 import type { ChatMessage } from "@/lib/types";
-import { getTextFromMessage } from "@/lib/utils";
 
 type AskUserQuestionPart = Extract<
   ChatMessage["parts"][number],
@@ -16,6 +15,10 @@ type PendingAskUserQuestion = {
   messageId: string;
   toolCallId: string;
 };
+
+type AskUserQuestionAnswer = AskUserQuestionPart["output"] extends infer Output
+  ? Output
+  : never;
 
 export function getAskUserQuestionPart(
   message: ChatMessage,
@@ -39,40 +42,30 @@ export function getAskUserQuestionAnswer(
   messageId: string,
   toolCallId: string
 ) {
-  const messageIndex = messages.findIndex(
-    (message) => message.id === messageId && getAskUserQuestionPart(message, toolCallId)
-  );
+  const message = messages.find((candidate) => candidate.id === messageId);
+  const part = message ? getAskUserQuestionPart(message, toolCallId) : null;
 
-  if (messageIndex === -1) {
+  if (!part || part.state !== "output-available") {
     return null;
   }
 
-  for (let index = messageIndex + 1; index < messages.length; index++) {
-    const candidate = messages[index];
-
-    if (candidate.role !== "user") {
-      continue;
-    }
-
-    const text = getTextFromMessage(candidate).trim();
-
-    return text.length > 0 ? text : null;
-  }
-
-  return null;
+  return part.output.answer;
 }
 
 export function getAskUserQuestionAnswerLabel(
   part: AskUserQuestionPart,
   answer: string | null
 ) {
-  const questionInput = part.input;
-  const options = (questionInput?.options ?? []) as AskUserQuestionOption[];
-
-  if (!answer || !questionInput) {
+  if (!answer) {
     return null;
   }
 
+  if (part.state === "output-available") {
+    return part.output.label;
+  }
+
+  const questionInput = part.input;
+  const options = (questionInput?.options ?? []) as AskUserQuestionOption[];
   const matchedOption = options.find(
     (option) => option.value === answer || option.label === answer
   );
@@ -90,23 +83,30 @@ export function findLatestPendingAskUserQuestion(
       continue;
     }
 
-    const part = getAskUserQuestionPart(message);
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex--) {
+      const part = message.parts[partIndex];
 
-    if (!part) {
-      continue;
-    }
-
-    const answer = getAskUserQuestionAnswer(messages, message.id, part.toolCallId);
-
-    if (!answer) {
-      return {
-        messageId: message.id,
-        toolCallId: part.toolCallId,
-      };
+      if (
+        part.type === "tool-askUserQuestion" &&
+        part.state === "input-available"
+      ) {
+        return {
+          messageId: message.id,
+          toolCallId: part.toolCallId,
+        };
+      }
     }
   }
 
   return null;
+}
+
+function getAskUserQuestionOutput(part: AskUserQuestionPart): AskUserQuestionAnswer | null {
+  if (part.state !== "output-available") {
+    return null;
+  }
+
+  return part.output;
 }
 
 export function hasPendingAskUserQuestion(messages: ChatMessage[]) {
@@ -120,7 +120,8 @@ export function getAskUserQuestionCardState(
 ) {
   const message = messages.find((candidate) => candidate.id === messageId);
   const part = message ? getAskUserQuestionPart(message, toolCallId) : null;
-  const answer = getAskUserQuestionAnswer(messages, messageId, toolCallId);
+  const output = part ? getAskUserQuestionOutput(part) : null;
+  const answer = output?.answer ?? null;
   const latestPending = findLatestPendingAskUserQuestion(messages);
 
   return {

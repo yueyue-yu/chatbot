@@ -24,6 +24,10 @@ import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { useAutoResume } from "@/hooks/use-auto-resume";
 import type { Vote } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
+import {
+  buildChatRequestBody,
+  isResolvedAskUserQuestionMessage,
+} from "@/lib/chat/chat-request-body";
 import type { ChatMessage } from "@/lib/types";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
 
@@ -32,6 +36,7 @@ type ActiveChatContextValue = {
   messages: ChatMessage[];
   setMessages: UseChatHelpers<ChatMessage>["setMessages"];
   sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
+  addToolOutput: UseChatHelpers<ChatMessage>["addToolOutput"];
   status: UseChatHelpers<ChatMessage>["status"];
   stop: UseChatHelpers<ChatMessage>["stop"];
   regenerate: UseChatHelpers<ChatMessage>["regenerate"];
@@ -108,6 +113,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     messages,
     setMessages,
     sendMessage,
+    addToolOutput,
     status,
     stop,
     regenerate,
@@ -120,23 +126,21 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       api: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/chat`,
       fetch: fetchWithErrorHandlers,
       prepareSendMessagesRequest(request) {
-        const lastMessage = request.messages.at(-1);
-
-        if (!lastMessage || lastMessage.role !== "user") {
-          throw new Error("Chat submissions must end with a user message.");
-        }
-
         return {
           body: {
-            id: request.id,
-            message: lastMessage,
-            selectedChatModel: currentModelIdRef.current,
-            selectedVisibilityType: visibilityType,
+            ...buildChatRequestBody({
+              chatId: request.id,
+              messages: request.messages,
+              selectedChatModel: currentModelIdRef.current,
+              selectedVisibilityType: visibilityType,
+            }),
             ...request.body,
           },
         };
       },
     }),
+    sendAutomaticallyWhen: ({ messages }) =>
+      isResolvedAskUserQuestionMessage(messages.at(-1)),
     onData: (dataPart) => {
       setDataStream((ds) => (ds ? [...ds, dataPart] : []));
     },
@@ -233,6 +237,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       messages,
       setMessages,
       sendMessage,
+      addToolOutput,
       status,
       stop,
       regenerate,
@@ -250,6 +255,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       messages,
       setMessages,
       sendMessage,
+      addToolOutput,
       status,
       stop,
       regenerate,

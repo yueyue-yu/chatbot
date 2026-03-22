@@ -30,7 +30,7 @@ export function AskUserQuestionTool({
   part: AskUserQuestionPart;
   isReadonly: boolean;
 }) {
-  const { messages, sendMessage, status } = useActiveChat();
+  const { addToolOutput, messages, status } = useActiveChat();
   const [isOtherOpen, setIsOtherOpen] = useState(false);
   const [otherAnswer, setOtherAnswer] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,19 +52,33 @@ export function AskUserQuestionTool({
     return null;
   }
 
-  const submitAnswer = async (text: string) => {
-    const trimmedText = text.trim();
+  const submitAnswer = async ({
+    answer,
+    label,
+    source,
+  }: {
+    answer: string;
+    label: string;
+    source: "option" | "other";
+  }) => {
+    const trimmedAnswer = answer.trim();
+    const trimmedLabel = label.trim();
 
-    if (!trimmedText || !isInteractive) {
+    if (!trimmedAnswer || !trimmedLabel || !isInteractive) {
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      await sendMessage({
-        role: "user",
-        parts: [{ type: "text", text: trimmedText }],
+      await addToolOutput({
+        output: {
+          answer: trimmedAnswer,
+          label: trimmedLabel,
+          source,
+        },
+        tool: "askUserQuestion",
+        toolCallId: part.toolCallId,
       });
       setOtherAnswer("");
       setIsOtherOpen(false);
@@ -114,7 +128,13 @@ export function AskUserQuestionTool({
                 <Button
                   data-testid="ask-user-question-other-submit"
                   disabled={!isInteractive || otherAnswer.trim().length === 0}
-                  onClick={() => submitAnswer(otherAnswer)}
+                  onClick={() =>
+                    submitAnswer({
+                      answer: otherAnswer,
+                      label: otherAnswer,
+                      source: "other",
+                    })
+                  }
                   size="sm"
                   type="button"
                 >
@@ -146,7 +166,13 @@ export function AskUserQuestionTool({
                   )}
                   disabled={!isInteractive}
                   key={`${option.value ?? option.label}-${index}`}
-                  onClick={() => submitAnswer(option.value ?? option.label)}
+                  onClick={() =>
+                    submitAnswer({
+                      answer: option.value ?? option.label,
+                      label: option.label,
+                      source: "option",
+                    })
+                  }
                   type="button"
                 >
                   <span className="block font-medium text-sm">{option.label}</span>

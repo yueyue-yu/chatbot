@@ -30,6 +30,7 @@ import {
   saveChat,
   saveMessages,
   updateChatTitleById,
+  updateMessage,
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
@@ -71,8 +72,10 @@ export async function POST(request: Request) {
     // - message: 当前新发来的用户消息
     // - selectedChatModel: 用户选择的模型
     // - selectedVisibilityType: 新 chat 的可见性
-    const { id, message, selectedChatModel, selectedVisibilityType } =
-      requestBody;
+    const { id, selectedChatModel, selectedVisibilityType } = requestBody;
+    const message = "message" in requestBody ? requestBody.message : null;
+    const toolMessage =
+      "toolMessage" in requestBody ? requestBody.toolMessage : null;
 
     // 并行做两件事：
     // 1. 生产环境校验 bot 防护
@@ -123,6 +126,10 @@ export async function POST(request: Request) {
       }
       messagesFromDb = await getMessagesByChatId({ id });
     } else {
+      if (!message) {
+        return new ChatbotError("bad_request:api").toResponse();
+      }
+
       // chat 不存在且当前是用户首条消息时，先创建 chat，
       // 再异步准备一个标题，后面在流里返回给前端并写回数据库。
       await saveChat({
@@ -136,11 +143,35 @@ export async function POST(request: Request) {
       });
     }
 
-    const historyMessages = convertToUIMessages(messagesFromDb);
-    const uiMessages = sanitizeAgentUIMessages<ChatMessage>([
-      ...historyMessages,
-      message as ChatMessage,
-    ]);
+    let historyMessages = convertToUIMessages(messagesFromDb);
+
+    if (toolMessage) {
+      const storedToolMessage = messagesFromDb.find(
+        (candidate) => candidate.id === toolMessage.id
+      );
+
+      if (!storedToolMessage || storedToolMessage.role !== "assistant") {
+        return new ChatbotError("bad_request:api").toResponse();
+      }
+
+      await updateMessage({
+        id: toolMessage.id,
+        parts: toolMessage.parts,
+      });
+
+      historyMessages = historyMessages.map((candidate) =>
+        candidate.id === toolMessage.id
+          ? {
+              ...candidate,
+              parts: toolMessage.parts as ChatMessage["parts"],
+            }
+          : candidate
+      );
+    }
+
+    const uiMessages = sanitizeAgentUIMessages<ChatMessage>(
+      message ? [...historyMessages, message as ChatMessage] : historyMessages
+    );
 
     // 从请求中提取地理位置信息，用于 system prompt 给模型一些上下文提示。
     const { longitude, latitude, city, country } = geolocation(request);
@@ -152,19 +183,21 @@ export async function POST(request: Request) {
       country,
     };
 
-    // 当前用户消息先落库，这样即使后续模型流式生成中断，用户输入本身也不会丢失。
-    await saveMessages({
-      messages: [
-        {
-          chatId: id,
-          id: message.id,
-          role: "user",
-          parts: message.parts,
-          attachments: [],
-          createdAt: new Date(),
-        },
-      ],
-    });
+    if (message) {
+      // 当前用户消息先落库，这样即使后续模型流式生成中断，用户输入本身也不会丢失。
+      await saveMessages({
+        messages: [
+          {
+            chatId: id,
+            id: message.id,
+            role: "user",
+            parts: message.parts,
+            attachments: [],
+            createdAt: new Date(),
+          },
+        ],
+      });
+    }
 
     // 创建 UI 消息流，统一处理：
     // - 调用 ToolLoopAgent

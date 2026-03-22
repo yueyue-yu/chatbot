@@ -39,6 +39,24 @@ function createAskUserQuestionMessage(id: string): ChatMessage {
   } as ChatMessage;
 }
 
+function createAnsweredAskUserQuestionMessage(
+  id: string,
+  answer: { answer: string; label: string; source: "option" | "other" }
+): ChatMessage {
+  const message = createAskUserQuestionMessage(id);
+
+  return {
+    ...message,
+    parts: [
+      {
+        ...message.parts[0],
+        output: answer,
+        state: "output-available",
+      },
+    ],
+  } as ChatMessage;
+}
+
 test("finds the latest unanswered ask-user-question card", () => {
   const messages = [
     createUserMessage("user-1", "Build the app"),
@@ -52,11 +70,16 @@ test("finds the latest unanswered ask-user-question card", () => {
   assert.equal(hasPendingAskUserQuestion(messages), true);
 });
 
-test("marks an ask-user-question card answered once a user reply exists after it", () => {
+test("marks an ask-user-question card answered once the tool output is available", () => {
+  const answeredQuestion = createAnsweredAskUserQuestionMessage("assistant-1", {
+    answer: "nextjs",
+    label: "Next.js",
+    source: "option",
+  });
+
   const messages = [
     createUserMessage("user-1", "Build the app"),
-    createAskUserQuestionMessage("assistant-1"),
-    createUserMessage("user-2", "nextjs"),
+    answeredQuestion,
     {
       id: "assistant-2",
       metadata: { createdAt: new Date().toISOString() },
@@ -74,18 +97,21 @@ test("marks an ask-user-question card answered once a user reply exists after it
       answer: "nextjs",
       answerLabel: "Next.js",
       isPending: false,
-      part: messages[1].parts[0],
+      part: answeredQuestion.parts[0],
     }
   );
 });
 
 test("keeps historical ask-user-question cards read-only when a newer one is pending", () => {
-  const firstQuestion = createAskUserQuestionMessage("assistant-1");
+  const firstQuestion = createAnsweredAskUserQuestionMessage("assistant-1", {
+    answer: "remix",
+    label: "Remix",
+    source: "option",
+  });
   const secondQuestion = createAskUserQuestionMessage("assistant-3");
   const messages = [
     createUserMessage("user-1", "Build the app"),
     firstQuestion,
-    createUserMessage("user-2", "remix"),
     {
       id: "assistant-2",
       metadata: { createdAt: new Date().toISOString() },
