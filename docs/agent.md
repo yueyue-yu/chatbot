@@ -1128,7 +1128,7 @@ Agent 的模型选择器，支持 cookie 和记忆、自定义模型。
 - `lib/ai/tools/update-document.ts`
 - `components/chat/artifact.tsx`
 - `hooks/use-artifact.ts`
-- `docs/artifacts.md`
+- `docs/artifacts/README.md`
 - `docs/chat-route.md`
 
 如果你愿意，我下一步可以继续帮你做两件事：

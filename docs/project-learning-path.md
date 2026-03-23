@@ -10,7 +10,8 @@
 - 能规划新增一种 Artifact
 
 如果你还没看过仓库大图，先看 [project-structure.md](./project-structure.md)。
-如果你想深入 Artifact 机制，再配合 [artifacts.md](./artifacts.md) 一起看。
+如果你想先把聊天页状态分层、`useContext` 与轻量 store 的边界弄清楚，先看 [chat-state-architecture.md](./chat-state-architecture.md)。
+如果你想深入 Artifact 机制，再配合 [Artifact 文档索引](./artifacts/README.md) 一起看。
 
 ---
 
@@ -295,7 +296,7 @@
 
 建议对照：
 
-- `artifacts.md` 里的“新增一种 Artifact 时，真实需要改哪些地方”
+- [05-extension-guide.md](./artifacts/05-extension-guide.md) 里的“新增一种 Artifact 时，真实需要改哪些地方”
 - `lib/types.ts`
 - `lib/artifacts/server.ts`
 - `app/(chat)/api/document/route.ts`
@@ -387,7 +388,7 @@
 
 第二天：
 
-- 读 `docs/artifacts.md`
+- 读 `docs/artifacts/README.md`
 - 跟着 Artifact 主链看源码
 - 选 `text` 深挖
 

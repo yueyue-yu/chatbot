@@ -9,6 +9,8 @@ import { useDataStream } from "./data-stream-provider";
 import { getChatHistoryPaginationKey } from "./sidebar-history";
 
 export function DataStreamHandler() {
+  // useActiveChat 只负责把自定义 data part 推进 dataStream；
+  // 这里才是真正把 Artifact 相关流事件解释成 UI 状态变化的桥接层。
   const { dataStream, setDataStream } = useDataStream();
   const { mutate } = useSWRConfig();
 
@@ -19,14 +21,21 @@ export function DataStreamHandler() {
       return;
     }
 
+    // 先复制一份当前批次，再立刻清空队列，避免同一批 delta 被重复消费。
     const newDeltas = dataStream.slice();
     setDataStream([]);
 
     for (const delta of newDeltas) {
       if (delta.type === "data-chat-title") {
+        // chat title 不是 Artifact 内容事件，但它和同一条 SSE 流复用通道。
         mutate(unstable_serialize(getChatHistoryPaginationKey));
         continue;
       }
+
+      // 先把类型专属事件交给各自 Artifact 定义处理，例如：
+      // - text 的 suggestion / textDelta
+      // - code 的 codeDelta / console metadata
+      // - html 的 htmlDelta / preview source 切换
       const artifactDefinition = artifactDefinitions.find(
         (currentArtifactDefinition) =>
           currentArtifactDefinition.kind === artifact.kind
@@ -40,6 +49,7 @@ export function DataStreamHandler() {
         });
       }
 
+      // 再统一处理所有 Artifact 都共享的控制事件。
       setArtifact((draftArtifact) => {
         if (!draftArtifact) {
           return { ...initialArtifactData, status: "streaming" };

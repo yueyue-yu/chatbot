@@ -14,6 +14,10 @@ type CreateDocumentProps = {
   modelId: string;
 };
 
+// createDocument 是 Artifact 主链路的起点之一：
+// - 给模型暴露“创建一个新文档/代码/表格/HTML Artifact”的工具
+// - 先通过 data-* 事件把前端右侧面板切到对应 Artifact
+// - 再委托服务端 handler 生成并保存真正的文档内容
 export const createDocument = ({
   session,
   dataStream,
@@ -33,6 +37,7 @@ export const createDocument = ({
     execute: async ({ title, kind }) => {
       const id = generateUUID();
 
+      // 这几条 data-* 事件先把前端面板切到“正在生成某个新 Artifact”的状态。
       dataStream.write({
         type: "data-kind",
         data: kind,
@@ -57,6 +62,7 @@ export const createDocument = ({
         transient: true,
       });
 
+      // 再从服务端注册表中找到对应 kind 的内容生成器。
       const documentHandler = documentHandlersByArtifactKind.find(
         (documentHandlerByArtifactKind) =>
           documentHandlerByArtifactKind.kind === kind
@@ -74,6 +80,7 @@ export const createDocument = ({
         modelId,
       });
 
+      // 内容生成与落库完成后，用 finish 把前端 Artifact 状态从 streaming 收尾到 idle。
       dataStream.write({ type: "data-finish", data: null, transient: true });
 
       return {

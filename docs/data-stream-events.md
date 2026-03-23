@@ -13,7 +13,8 @@
 - `data-clear`
 - `data-finish`
 
-如果你想看 Artifact 系统的整体设计，再看 [artifacts.md](./artifacts.md)。
+如果你想看 Artifact 系统的整体设计，再看 [Artifact 文档索引](./artifacts/README.md)。
+如果你想顺着 `/api/chat -> useChat -> DataStreamHandler -> useArtifact` 的真实主链路读懂这套实现，请继续看 [SSE 流处理文档集](./sse/README.md)。
 
 ---
 

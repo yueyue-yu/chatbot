@@ -30,6 +30,8 @@ import { Toolbar } from "./toolbar";
 import { VersionFooter } from "./version-footer";
 import type { VisibilityType } from "./visibility-selector";
 
+// 前端所有可渲染的 Artifact 类型都集中注册在这里。
+// 主面板渲染、流式事件分发、工具栏动作解析都会依赖这份注册表。
 export const artifactDefinitions = [
   textArtifact,
   codeArtifact,
@@ -40,6 +42,7 @@ export const artifactDefinitions = [
 export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
 
 export type UIArtifact = {
+  // 这是当前右侧面板的运行时 UI 状态，不是数据库里的完整 Document 记录。
   title: string;
   documentId: string;
   kind: ArtifactKind;
@@ -58,6 +61,7 @@ type HtmlArtifactMetadata = {
   view?: "source" | "preview";
 };
 
+// HTML Artifact 额外支持“源码 / 预览”双视图切换。
 function HtmlArtifactViewToggle({
   status,
   view,
@@ -143,6 +147,8 @@ function PureArtifact({
   const { artifact, setArtifact, metadata, setMetadata } = useArtifact();
   const isHtmlArtifact = artifact.kind === "html";
 
+  // 当 Artifact 已经有 documentId 且不在 streaming 时，再去请求版本历史。
+  // 流式生成阶段直接展示实时内容，避免数据库回流覆盖当前增量内容。
   const {
     data: documents,
     isLoading: isDocumentsFetching,
@@ -164,6 +170,7 @@ function PureArtifact({
   const [isContentDirty, setIsContentDirty] = useState(false);
 
   useEffect(() => {
+    // 默认在流式生成时自动滚动到底部；一旦用户手动上滑，就停止自动追随。
     if (artifact.status !== "streaming") {
       userScrolledArtifact.current = false;
       return;
@@ -183,6 +190,7 @@ function PureArtifact({
       const mostRecentDocument = documents.at(-1);
 
       if (mostRecentDocument) {
+        // 面板默认总是对齐到最新版本；若当前没有本地脏编辑，则同步最新内容到 UI。
         setDocument(mostRecentDocument);
         setCurrentVersionIndex(documents.length - 1);
         if (artifact.status === "streaming" || !isContentDirty) {
@@ -196,6 +204,7 @@ function PureArtifact({
   }, [documents, setArtifact, artifact.status, isContentDirty]);
 
   useEffect(() => {
+    // 初次进入面板或版本链发生变化时，主动触发一次文档列表刷新。
     mutateDocuments();
   }, [mutateDocuments]);
 
@@ -207,6 +216,8 @@ function PureArtifact({
         return;
       }
 
+      // 用 SWR mutate 包住“手工编辑最新版本”的保存过程，
+      // 这样可以在不整页重刷的情况下把最新内容回写到本地版本列表。
       mutate<Document[]>(
         `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
         async (currentDocuments) => {
@@ -226,6 +237,7 @@ function PureArtifact({
             return currentDocuments;
           }
 
+          // isManualEdit 走“直接改写当前最新版本”的语义，而不是新增一条版本历史。
           await fetch(
             `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
             {
@@ -258,6 +270,7 @@ function PureArtifact({
 
   const saveContent = useCallback(
     (updatedContent: string, debounce: boolean) => {
+      // 各类型编辑器统一通过这个入口保存正文；这里负责去抖与脏标记。
       latestContentRef.current = updatedContent;
       setIsContentDirty(true);
 
@@ -289,6 +302,7 @@ function PureArtifact({
   }
 
   const handleVersionChange = (type: "next" | "prev" | "toggle" | "latest") => {
+    // 统一处理版本切换与 diff 模式切换，避免这些逻辑散落在多个按钮组件里。
     if (!documents) {
       return;
     }
@@ -321,6 +335,7 @@ function PureArtifact({
   const { width: windowWidth, height: windowHeight } = useWindowSize();
   const isMobile = windowWidth ? windowWidth < 768 : false;
 
+  // 根据当前 kind 找到对应 Artifact 定义；找不到说明注册表和状态已经失配。
   const artifactDefinition = artifactDefinitions.find(
     (definition) => definition.kind === artifact.kind
   );
@@ -330,6 +345,7 @@ function PureArtifact({
   }
 
   useEffect(() => {
+    // 打开已有文档时，把类型专属初始化逻辑交给对应 Artifact 定义处理。
     if (artifact.documentId !== "init" && artifactDefinition.initialize) {
       artifactDefinition.initialize({
         documentId: artifact.documentId,
@@ -339,6 +355,7 @@ function PureArtifact({
   }, [artifact.documentId, artifactDefinition, setMetadata]);
 
   useEffect(() => {
+    // HTML 正在流式生成时强制停留在 source 视图，避免 preview 看到半成品。
     if (!isHtmlArtifact || artifact.status !== "streaming") {
       return;
     }
@@ -391,6 +408,7 @@ function PureArtifact({
                 {artifact.title}
               </div>
               <div className="flex items-center gap-2">
+                {/* 顶部状态区会在保存中、最新更新时间、生成中和骨架态之间切换。 */}
                 {isContentDirty ? (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <div className="size-1.5 animate-pulse rounded-full bg-amber-500" />
@@ -447,6 +465,7 @@ function PureArtifact({
         }}
         ref={artifactContentRef}
       >
+        {/* 真正的正文由当前 kind 对应的 content 组件渲染。 */}
         <artifactDefinition.content
           content={
             isCurrentVersion
@@ -468,6 +487,7 @@ function PureArtifact({
         />
         <AnimatePresence>
           {isCurrentVersion && (
+            // 只有当前最新版本才允许继续操作工具栏；历史版本只做浏览与对比。
             <Toolbar
               artifactActions={
                 <ArtifactActions
@@ -513,6 +533,7 @@ function PureArtifact({
   if (isMobile) {
     return (
       <motion.div
+        // 移动端从卡片 boundingBox 位置展开到全屏，形成“从消息打开文档”的过渡动画。
         animate={{
           opacity: 1,
           x: 0,
@@ -541,6 +562,7 @@ function PureArtifact({
 
   return (
     <div
+      // 桌面端始终表现为右侧固定面板。
       className="flex h-dvh w-[60%] shrink-0 flex-col overflow-hidden border-l border-border/50 bg-sidebar transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
       data-testid="artifact"
     >
@@ -550,6 +572,7 @@ function PureArtifact({
 }
 
 export const Artifact = memo(PureArtifact, (prevProps, nextProps) => {
+  // Artifact 面板比较重，手动收窄重渲染条件，避免聊天流式过程中频繁刷新整块侧栏。
   if (prevProps.status !== nextProps.status) {
     return false;
   }

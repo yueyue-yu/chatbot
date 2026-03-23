@@ -5,6 +5,7 @@ import type { Suggestion } from "@/lib/db/schema";
 import type { ChatMessage, CustomUIDataTypes } from "@/lib/types";
 import type { UIArtifact } from "./artifact";
 
+// 每种 Artifact 类型都通过这组上下文拿到“当前面板状态”和可执行动作。
 export type ArtifactActionContext<M = any> = {
   content: string;
   handleVersionChange: (type: "next" | "prev" | "toggle" | "latest") => void;
@@ -23,6 +24,7 @@ type ArtifactAction<M = any> = {
   isDisabled?: (context: ArtifactActionContext<M>) => boolean;
 };
 
+// 右侧悬浮工具栏的动作上下文比侧栏 action 更轻，只关心继续发消息。
 export type ArtifactToolbarContext = {
   sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
 };
@@ -54,6 +56,12 @@ type InitializeParameters<M = any> = {
   setMetadata: Dispatch<SetStateAction<M>>;
 };
 
+// ArtifactConfig 是“注册一种 Artifact 类型”所需的完整契约：
+// - kind / description 定义身份与用途
+// - content 定义主内容渲染器
+// - actions / toolbar 定义该类型支持的交互
+// - initialize 定义面板打开已有文档时的初始化逻辑
+// - onStreamPart 定义如何消费该类型专属 data-* 流事件
 type ArtifactConfig<T extends string, M = any> = {
   kind: T;
   description: string;
@@ -68,6 +76,9 @@ type ArtifactConfig<T extends string, M = any> = {
   }) => void;
 };
 
+// 这个类本质上不是运行时状态，而是“Artifact 类型定义”。
+// text/code/html/sheet 等客户端文件都会实例化它，然后统一注册到
+// artifactDefinitions 中，供面板和 DataStreamHandler 动态分发使用。
 export class Artifact<T extends string, M = any> {
   readonly kind: T;
   readonly description: string;
@@ -85,6 +96,7 @@ export class Artifact<T extends string, M = any> {
     this.kind = config.kind;
     this.description = config.description;
     this.content = config.content;
+    // 某些类型没有额外 action / toolbar，这里给稳定默认值，减少调用方判空。
     this.actions = config.actions || [];
     this.toolbar = config.toolbar || [];
     this.initialize = config.initialize || (async () => ({}));

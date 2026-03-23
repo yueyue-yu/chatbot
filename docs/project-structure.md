@@ -241,6 +241,8 @@ app/(chat)/
 
 如果需要更细的 hook 职责拆解、相互关系和调用链说明，可继续阅读：
 
+- `docs/chat-state-architecture.md`
+- `docs/sse/README.md`
 - `docs/hooks.md`
 
 ## 6. lib 目录
@@ -361,8 +363,8 @@ artifacts/
 
 如果你需要更细的内容，请继续读：
 
-- [docs/artifacts.md](./artifacts.md)
-  Artifact 的定位、核心契约、流式协议、版本语义、扩展清单、已知坑点。
+- [docs/artifacts/README.md](./artifacts/README.md)
+  Artifact 文档入口，包含定位、核心契约、流式协议、版本语义与扩展清单。
 - [docs/project-learning-path.md](./project-learning-path.md)
   面向维护者/二开者的读码路线、实战练习和概念对照表。
 

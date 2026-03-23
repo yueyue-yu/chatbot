@@ -9,6 +9,10 @@ import {
 } from "@/lib/db/queries";
 import { ChatbotError } from "@/lib/errors";
 
+// 这个路由服务的是 Artifact 文档本身，而不是聊天消息：
+// - GET: 拉某个 documentId 的所有版本
+// - POST: 新增一个版本，或对最新版本做“原地手工编辑”
+// - DELETE: 删除某个时间点之后的版本
 const documentSchema = z.object({
   content: z.string(),
   title: z.string(),
@@ -32,6 +36,7 @@ export async function GET(request: Request) {
     const documents = await getDocumentsById({ id });
     const [document] = documents;
 
+    // documentId 级别的权限校验只需要验证其中任意一个版本的归属即可。
     assertResourceOwner(document, user.id, {
       forbidden: "forbidden:document",
       notFound: "not_found:document",
@@ -89,10 +94,12 @@ export async function POST(request: Request) {
     }
 
     if (isManualEdit && document) {
+      // 手工编辑走“更新当前版本内容”语义，不新增一个新的历史版本。
       const result = await updateDocumentContent({ id, content });
       return Response.json(result, { status: 200 });
     }
 
+    // 普通保存走“新增版本”语义。
     const savedDocument = await saveDocument({
       id,
       content,
@@ -148,6 +155,8 @@ export async function DELETE(request: Request) {
       ).toResponse();
     }
 
+    // 这里的删除语义是“删除某个版本时间点之后的所有版本”，
+    // 供 Artifact 版本回退/裁剪场景使用。
     const documentsDeleted = await deleteDocumentsByIdAfterTimestamp({
       id,
       timestamp: parsedTimestamp,

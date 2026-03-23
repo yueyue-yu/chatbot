@@ -56,8 +56,8 @@ If you are extending or maintaining this project, these internal docs are the be
 
 - [docs/project-structure.md](docs/project-structure.md)
   Repository map, request flow, and major entry points.
-- [docs/artifacts.md](docs/artifacts.md)
-  Artifact lifecycle, stream protocol, version semantics, and extension checklist.
+- [docs/artifacts/README.md](docs/artifacts/README.md)
+  Artifact documentation index, lifecycle, stream protocol, version semantics, and extension checklist.
 - [docs/project-learning-path.md](docs/project-learning-path.md)
   A practical study path for engineers who want to modify or extend the project.
 
