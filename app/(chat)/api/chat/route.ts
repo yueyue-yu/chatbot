@@ -72,7 +72,8 @@ export async function POST(request: Request) {
     // - message: 当前新发来的用户消息
     // - selectedChatModel: 用户选择的模型
     // - selectedVisibilityType: 新 chat 的可见性
-    const { id, selectedChatModel, selectedVisibilityType } = requestBody;
+    const { id, searchEnabled, selectedChatModel, selectedVisibilityType } =
+      requestBody;
     const message = "message" in requestBody ? requestBody.message : null;
     const toolMessage =
       "toolMessage" in requestBody ? requestBody.toolMessage : null;
@@ -210,6 +211,7 @@ export async function POST(request: Request) {
           dataStream,
           modelId: chatModel,
           requestHints,
+          searchEnabled,
           session,
         });
 

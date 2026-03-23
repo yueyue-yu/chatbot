@@ -39,6 +39,7 @@ const toolMessageSchema = z.object({
 
 const requestBaseSchema = z.object({
   id: z.string().uuid(),
+  searchEnabled: z.boolean(),
   selectedChatModel: z.string(),
   selectedVisibilityType: z.enum(["public", "private"]),
 });

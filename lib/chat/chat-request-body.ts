@@ -7,11 +7,13 @@ export type ChatRequestBody =
   | {
       id: string;
       message: UserChatMessage;
+      searchEnabled: boolean;
       selectedChatModel: string;
       selectedVisibilityType: VisibilityType;
     }
   | {
       id: string;
+      searchEnabled: boolean;
       toolMessage: {
         id: string;
         role: "assistant";
@@ -28,7 +30,8 @@ export function isResolvedAskUserQuestionMessage(
     message?.role === "assistant" &&
     message.parts.some(
       (part) =>
-        part.type === "tool-askUserQuestion" && part.state === "output-available"
+        part.type === "tool-askUserQuestion" &&
+        part.state === "output-available"
     ) &&
     !message.parts.some(
       (part) =>
@@ -40,11 +43,13 @@ export function isResolvedAskUserQuestionMessage(
 export function buildChatRequestBody({
   chatId,
   messages,
+  searchEnabled,
   selectedChatModel,
   selectedVisibilityType,
 }: {
   chatId: string;
   messages: ChatMessage[];
+  searchEnabled: boolean;
   selectedChatModel: string;
   selectedVisibilityType: VisibilityType;
 }): ChatRequestBody {
@@ -58,6 +63,7 @@ export function buildChatRequestBody({
     return {
       id: chatId,
       message: lastMessage as UserChatMessage,
+      searchEnabled,
       selectedChatModel,
       selectedVisibilityType,
     };
@@ -66,6 +72,7 @@ export function buildChatRequestBody({
   if (isResolvedAskUserQuestionMessage(lastMessage)) {
     return {
       id: chatId,
+      searchEnabled,
       selectedChatModel,
       selectedVisibilityType,
       toolMessage: {

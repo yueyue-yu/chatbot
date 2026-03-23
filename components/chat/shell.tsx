@@ -33,6 +33,8 @@ export function ChatShell() {
     votes,
     currentModelId,
     setCurrentModelId,
+    searchEnabled,
+    setSearchEnabled,
     isAskUserQuestionPending,
   } = useActiveChat();
 
@@ -111,6 +113,7 @@ export function ChatShell() {
                     setInput("");
                   }}
                   onModelChange={setCurrentModelId}
+                  searchEnabled={searchEnabled}
                   selectedModelId={currentModelId}
                   selectedVisibilityType={visibilityType}
                   sendMessage={
@@ -132,6 +135,7 @@ export function ChatShell() {
                   setAttachments={setAttachments}
                   setInput={setInput}
                   setMessages={setMessages}
+                  setSearchEnabled={setSearchEnabled}
                   status={status}
                   stop={stop}
                 />

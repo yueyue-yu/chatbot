@@ -17,18 +17,18 @@ import {
 } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
+import { hasPendingAskUserQuestion } from "@/components/chat/ask-user-question-state";
 import { useDataStream } from "@/components/chat/data-stream-provider";
 import { getChatHistoryPaginationKey } from "@/components/chat/sidebar-history";
 import { toast } from "@/components/chat/toast";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { useAutoResume } from "@/hooks/use-auto-resume";
-import type { Vote } from "@/lib/db/schema";
-import { ChatbotError } from "@/lib/errors";
 import {
   buildChatRequestBody,
   isResolvedAskUserQuestionMessage,
 } from "@/lib/chat/chat-request-body";
-import { hasPendingAskUserQuestion } from "@/components/chat/ask-user-question-state";
+import type { Vote } from "@/lib/db/schema";
+import { ChatbotError } from "@/lib/errors";
 import type { ChatMessage } from "@/lib/types";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
 
@@ -49,6 +49,8 @@ type ActiveChatContextValue = {
   votes: Vote[] | undefined;
   currentModelId: string;
   setCurrentModelId: (id: string) => void;
+  searchEnabled: boolean;
+  setSearchEnabled: (enabled: boolean) => void;
   isAskUserQuestionPending: boolean;
 };
 
@@ -86,6 +88,12 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     currentModelIdRef.current = currentModelId;
   }, [currentModelId]);
+
+  const [searchEnabled, setSearchEnabled] = useState(false);
+  const searchEnabledRef = useRef(searchEnabled);
+  useEffect(() => {
+    searchEnabledRef.current = searchEnabled;
+  }, [searchEnabled]);
 
   const [input, setInput] = useState("");
 
@@ -146,6 +154,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
             ...buildChatRequestBody({
               chatId: request.id,
               messages: request.messages,
+              searchEnabled: searchEnabledRef.current,
               selectedChatModel: currentModelIdRef.current,
               selectedVisibilityType: visibilityType,
             }),
@@ -198,6 +207,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (prevChatIdRef.current !== chatId) {
       prevChatIdRef.current = chatId;
+      setSearchEnabled(false);
       if (isNewChat) {
         // The provider stays mounted across route changes, so clear the in-
         // memory transcript when the user lands on a fresh, unsaved chat shell.
@@ -278,6 +288,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       votes,
       currentModelId,
       setCurrentModelId,
+      searchEnabled,
+      setSearchEnabled,
       isAskUserQuestionPending,
     }),
     [
@@ -296,6 +308,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       isLoading,
       votes,
       currentModelId,
+      searchEnabled,
       isAskUserQuestionPending,
     ]
   );

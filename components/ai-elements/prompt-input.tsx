@@ -58,6 +58,7 @@ import { cn } from "@/lib/utils";
 import {
   CornerDownLeftIcon,
   ImageIcon,
+  MonitorIcon,
   PlusIcon,
   SquareIcon,
   XIcon,
@@ -97,13 +98,81 @@ const convertBlobUrlToDataUrl = async (url: string): Promise<string | null> => {
   }
 };
 
+const revokeBlobUrl = (url: string | undefined) => {
+  if (url?.startsWith("blob:")) {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const isCancelledScreenCapture = (error: unknown) =>
+  error instanceof DOMException &&
+  (error.name === "AbortError" || error.name === "NotAllowedError");
+
+const captureScreenshotFile = async () => {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    throw new Error("Screen capture is not supported in this browser.");
+  }
+
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+  });
+
+  try {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+
+    await video.play();
+
+    if (
+      video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA &&
+      video.videoWidth === 0 &&
+      video.videoHeight === 0
+    ) {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () =>
+          reject(new Error("Failed to read the captured screen."));
+      });
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1;
+    canvas.height = video.videoHeight || 1;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Failed to create a canvas for the screenshot.");
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/png");
+    });
+
+    if (!blob) {
+      throw new Error("Failed to create the screenshot image.");
+    }
+
+    return new File([blob], `screenshot-${Date.now()}.png`, {
+      type: "image/png",
+    });
+  } finally {
+    for (const track of stream.getTracks()) {
+      track.stop();
+    }
+  }
+};
+
 // ============================================================================
 // Provider Context & Types
 // ============================================================================
 
 export interface AttachmentsContext {
   files: (FileUIPart & { id: string })[];
-  add: (files: File[] | FileList) => void;
+  add: (files: File[] | FileList) => Promise<void> | void;
   remove: (id: string) => void;
   clear: () => void;
   openFileDialog: () => void;
@@ -162,6 +231,12 @@ const useOptionalProviderAttachments = () =>
 
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
+  files?: (FileUIPart & { id: string })[];
+  onFilesAdd?: (files: File[] | FileList) => Promise<void> | void;
+  onFileRemove?: (id: string) => void;
+  onFilesClear?: () => void;
 }>;
 
 /**
@@ -170,58 +245,102 @@ export type PromptInputProviderProps = PropsWithChildren<{
  */
 export const PromptInputProvider = ({
   initialInput: initialTextInput = "",
+  value,
+  onValueChange,
+  files: controlledFiles,
+  onFilesAdd,
+  onFileRemove,
+  onFilesClear,
   children,
 }: PromptInputProviderProps) => {
   // ----- textInput state
-  const [textInput, setTextInput] = useState(initialTextInput);
-  const clearInput = useCallback(() => setTextInput(""), []);
+  const [uncontrolledTextInput, setUncontrolledTextInput] =
+    useState(initialTextInput);
+  const isTextControlled = value !== undefined;
+  const textInput = isTextControlled ? value : uncontrolledTextInput;
+
+  const setTextInput = useCallback(
+    (nextValue: string) => {
+      if (!isTextControlled) {
+        setUncontrolledTextInput(nextValue);
+      }
+      onValueChange?.(nextValue);
+    },
+    [isTextControlled, onValueChange]
+  );
+
+  const clearInput = useCallback(() => {
+    if (!isTextControlled) {
+      setUncontrolledTextInput("");
+    }
+    onValueChange?.("");
+  }, [isTextControlled, onValueChange]);
 
   // ----- attachments state (global when wrapped)
-  const [attachmentFiles, setAttachmentFiles] = useState<
+  const [uncontrolledAttachmentFiles, setUncontrolledAttachmentFiles] =
+    useState<
     (FileUIPart & { id: string })[]
   >([]);
+  const isAttachmentsControlled = controlledFiles !== undefined;
+  const attachmentFiles = controlledFiles ?? uncontrolledAttachmentFiles;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // oxlint-disable-next-line eslint(no-empty-function)
   const openRef = useRef<() => void>(() => {});
 
-  const add = useCallback((files: File[] | FileList) => {
-    const incoming = [...files];
-    if (incoming.length === 0) {
+  const add = useCallback(
+    (files: File[] | FileList) => {
+      const incoming = [...files];
+      if (incoming.length === 0) {
+        return;
+      }
+
+      if (isAttachmentsControlled) {
+        return onFilesAdd?.(incoming);
+      }
+
+      setUncontrolledAttachmentFiles((prev) => [
+        ...prev,
+        ...incoming.map((file) => ({
+          filename: file.name,
+          id: nanoid(),
+          mediaType: file.type,
+          type: "file" as const,
+          url: URL.createObjectURL(file),
+        })),
+      ]);
+    },
+    [isAttachmentsControlled, onFilesAdd]
+  );
+
+  const remove = useCallback(
+    (id: string) => {
+      if (isAttachmentsControlled) {
+        onFileRemove?.(id);
+        return;
+      }
+
+      setUncontrolledAttachmentFiles((prev) => {
+        const found = prev.find((f) => f.id === id);
+        revokeBlobUrl(found?.url);
+        return prev.filter((f) => f.id !== id);
+      });
+    },
+    [isAttachmentsControlled, onFileRemove]
+  );
+
+  const clear = useCallback(() => {
+    if (isAttachmentsControlled) {
+      onFilesClear?.();
       return;
     }
 
-    setAttachmentFiles((prev) => [
-      ...prev,
-      ...incoming.map((file) => ({
-        filename: file.name,
-        id: nanoid(),
-        mediaType: file.type,
-        type: "file" as const,
-        url: URL.createObjectURL(file),
-      })),
-    ]);
-  }, []);
-
-  const remove = useCallback((id: string) => {
-    setAttachmentFiles((prev) => {
-      const found = prev.find((f) => f.id === id);
-      if (found?.url) {
-        URL.revokeObjectURL(found.url);
-      }
-      return prev.filter((f) => f.id !== id);
-    });
-  }, []);
-
-  const clear = useCallback(() => {
-    setAttachmentFiles((prev) => {
+    setUncontrolledAttachmentFiles((prev) => {
       for (const f of prev) {
-        if (f.url) {
-          URL.revokeObjectURL(f.url);
-        }
+        revokeBlobUrl(f.url);
       }
       return [];
     });
-  }, []);
+  }, [isAttachmentsControlled, onFilesClear]);
 
   // Keep a ref to attachments for cleanup on unmount (avoids stale closure)
   const attachmentsRef = useRef(attachmentFiles);
@@ -233,13 +352,14 @@ export const PromptInputProvider = ({
   // Cleanup blob URLs on unmount to prevent memory leaks
   useEffect(
     () => () => {
+      if (isAttachmentsControlled) {
+        return;
+      }
       for (const f of attachmentsRef.current) {
-        if (f.url) {
-          URL.revokeObjectURL(f.url);
-        }
+        revokeBlobUrl(f.url);
       }
     },
-    []
+    [isAttachmentsControlled]
   );
 
   const openFileDialog = useCallback(() => {
@@ -358,6 +478,56 @@ export const PromptInputActionAddAttachments = ({
   );
 };
 
+export type PromptInputActionAddScreenshotProps = Omit<
+  ComponentProps<typeof DropdownMenuItem>,
+  "onError"
+> & {
+  label?: string;
+  onError?: (message: string) => void;
+  onCaptureError?: (message: string) => void;
+};
+
+export const PromptInputActionAddScreenshot = ({
+  label = "Add screenshot",
+  onError,
+  onCaptureError,
+  ...props
+}: PromptInputActionAddScreenshotProps) => {
+  const attachments = usePromptInputAttachments();
+  const reportError = onError ?? onCaptureError;
+
+  const handleCapture = useCallback(async () => {
+    try {
+      const screenshotFile = await captureScreenshotFile();
+      await attachments.add([screenshotFile]);
+    } catch (error) {
+      if (isCancelledScreenCapture(error)) {
+        return;
+      }
+
+      reportError?.(
+        error instanceof Error
+          ? error.message
+          : "Failed to capture the screenshot."
+      );
+    }
+  }, [attachments, reportError]);
+
+  const handleSelect = useCallback(
+    (e: Event) => {
+      e.preventDefault();
+      void handleCapture();
+    },
+    [handleCapture]
+  );
+
+  return (
+    <DropdownMenuItem {...props} onSelect={handleSelect}>
+      <MonitorIcon className="mr-2 size-4" /> {label}
+    </DropdownMenuItem>
+  );
+};
+
 export interface PromptInputMessage {
   text: string;
   files: FileUIPart[];
@@ -385,7 +555,7 @@ export type PromptInputProps = Omit<
   onSubmit: (
     message: PromptInputMessage,
     event: FormEvent<HTMLFormElement>
-  ) => void | Promise<void>;
+  ) => boolean | void | Promise<boolean | void>;
 };
 
 export const PromptInput = ({
@@ -553,7 +723,7 @@ export const PromptInput = ({
       }
 
       if (capped.length > 0) {
-        controller?.attachments.add(capped);
+        return controller?.attachments.add(capped);
       }
     },
     [matchesAccept, maxFileSize, maxFiles, onError, files.length, controller]
@@ -753,25 +923,18 @@ export const PromptInput = ({
           })
         );
 
-        const result = onSubmit({ files: convertedFiles, text }, event);
+        const shouldClear = await onSubmit(
+          { files: convertedFiles, text },
+          event
+        );
 
-        // Handle both sync and async onSubmit
-        if (result instanceof Promise) {
-          try {
-            await result;
-            clear();
-            if (usingProvider) {
-              controller.textInput.clear();
-            }
-          } catch {
-            // Don't clear on error - user may want to retry
-          }
-        } else {
-          // Sync function completed without throwing, clear inputs
-          clear();
-          if (usingProvider) {
-            controller.textInput.clear();
-          }
+        if (shouldClear === false) {
+          return;
+        }
+
+        clear();
+        if (usingProvider) {
+          controller.textInput.clear();
         }
       } catch {
         // Don't clear on error - user may want to retry

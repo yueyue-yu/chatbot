@@ -1,4 +1,4 @@
-import type { UIMessageStreamWriter } from "ai";
+import type { ToolSet, UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { askUserQuestion } from "@/lib/agent/tools/ask-user-question";
 import { createDocument } from "@/lib/agent/tools/create-document";
@@ -11,17 +11,18 @@ import type { ChatMessage } from "@/lib/types";
 type CreateChatToolsProps = {
   dataStream: UIMessageStreamWriter<ChatMessage>;
   modelId: string;
+  searchEnabled: boolean;
   session: Session;
 };
 
 export function createChatTools({
   dataStream,
   modelId,
+  searchEnabled,
   session,
 }: CreateChatToolsProps) {
-  return {
+  const tools = {
     askUserQuestion: askUserQuestion(),
-    webSearch: createWebSearchTool(),
     createDocument: createDocument({
       dataStream,
       modelId,
@@ -42,4 +43,13 @@ export function createChatTools({
       session,
     }),
   };
+
+  if (!searchEnabled) {
+    return tools satisfies ToolSet;
+  }
+
+  return {
+    ...tools,
+    webSearch: createWebSearchTool(),
+  } satisfies ToolSet;
 }
